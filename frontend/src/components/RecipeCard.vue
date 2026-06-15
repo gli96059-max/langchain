@@ -1,5 +1,6 @@
 <script setup>
 import { ref, reactive, onUnmounted } from 'vue'
+import StepReader from './StepReader.vue'
 
 const props = defineProps({
   recipe: { type: Object, required: true },
@@ -9,6 +10,7 @@ const props = defineProps({
 const emit = defineEmits(['favorite', 'unfavorite'])
 
 const showSteps = ref(false)
+const showReader = ref(false)
 const timers = reactive({})
 
 function toggleFavorite() {
@@ -178,16 +180,28 @@ onUnmounted(() => {
     </div>
 
     <!-- Links -->
-    <div v-if="recipe.reference_url" class="card-footer">
-      <a
-        :href="recipe.reference_url"
-        target="_blank"
-        rel="noopener"
-        class="reference-link"
-      >
-        查看参考来源 →
-      </a>
+    <div v-if="recipe.steps?.length" class="card-footer">
+      <div class="footer-links">
+        <button class="reader-link" @click="showReader = true" v-if="recipe.steps.length > 0">
+          📖 阅读模式
+        </button>
+        <a
+          v-if="recipe.reference_url"
+          :href="recipe.reference_url"
+          target="_blank"
+          rel="noopener"
+          class="reference-link"
+        >
+          查看参考来源 →
+        </a>
+      </div>
     </div>
+
+    <StepReader
+      :visible="showReader"
+      :recipe="recipe"
+      @close="showReader = false"
+    />
   </div>
 </template>
 
@@ -498,6 +512,27 @@ onUnmounted(() => {
 /* Footer */
 .card-footer {
   padding: 0 20px 16px;
+}
+
+.footer-links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.reader-link {
+  font-size: 13px;
+  color: var(--color-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  padding: 0;
+}
+
+.reader-link:hover {
+  text-decoration: underline;
 }
 
 .reference-link {
