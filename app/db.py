@@ -23,6 +23,16 @@ def init_db():
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            image_url TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
     """)
     conn.commit()
     conn.close()
@@ -82,9 +92,35 @@ def touch_session(session_id: str):
 
 def delete_session(session_id: str):
     conn = get_connection()
+    conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
     conn.commit()
     conn.close()
+
+
+def add_message(session_id: str, role: str, content: str, image_url: str | None = None) -> dict:
+    conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+    cursor = conn.execute(
+        "INSERT INTO messages (session_id, role, content, image_url, created_at) VALUES (?, ?, ?, ?, ?)",
+        (session_id, role, content, image_url, now),
+    )
+    conn.commit()
+    msg = conn.execute(
+        "SELECT * FROM messages WHERE id = ?", (cursor.lastrowid,)
+    ).fetchone()
+    conn.close()
+    return dict(msg)
+
+
+def get_messages(session_id: str) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC",
+        (session_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 init_db()

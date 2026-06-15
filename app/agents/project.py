@@ -142,7 +142,7 @@ def call_evaluate_recipes(state: ChefState, config: RunnableConfig) -> dict:
     }
 
 
-def build_chef_graph() -> StateGraph:
+def build_chef_graph(checkpointer=None) -> StateGraph:
     builder = StateGraph(ChefState)
 
     builder.add_node("identify_ingredients", call_identify_ingredients)
@@ -154,7 +154,7 @@ def build_chef_graph() -> StateGraph:
     builder.add_edge("search_recipes", "evaluate_recipes")
     builder.add_edge("evaluate_recipes", END)
 
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 
 chief_agent = build_chef_graph()
