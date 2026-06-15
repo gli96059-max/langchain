@@ -162,6 +162,7 @@ async def api_chat(session_id: str, req: ChatRequest):
         recipes_result = []
         summary_result = ""
         error_occurred = False
+        seen_steps = set()  # Guard against checkpoint replay of stale state
 
         try:
             # Run graph in thread (sync calls), stream state after each node
@@ -171,6 +172,11 @@ async def api_chat(session_id: str, req: ChatRequest):
                 stream_mode="values",
             ):
                 step = state.get("current_step", "")
+                # Skip stale steps replayed from a previous checkpoint
+                if step in seen_steps:
+                    continue
+                if step:
+                    seen_steps.add(step)
 
                 if step == "食材识别完成":
                     yield _sse_event("status", {
