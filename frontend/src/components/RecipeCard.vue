@@ -1,9 +1,7 @@
 <script setup>
-import { ref, reactive, onUnmounted } from 'vue'
+import { ref, reactive, nextTick, onUnmounted } from 'vue'
 import StepReader from './StepReader.vue'
 import { submitRating } from '../api/index.js'
-
-const shareToast = ref('')
 
 const props = defineProps({
   recipe: { type: Object, required: true },
@@ -19,6 +17,8 @@ const showRating = ref(false)
 const ratingValue = ref(0)
 const ratingComment = ref('')
 const ratingSubmitted = ref(false)
+const showShareCard = ref(false)
+const shareCanvasRef = ref(null)
 const timers = reactive({})
 
 async function handleSubmitRating() {
@@ -76,31 +76,146 @@ function enhanceStep(text) {
   return parts
 }
 
-async function handleShare() {
-  const r = props.recipe
-  const lines = [
-    `🍳 ${r.name}`,
-    `难度: ${r.difficulty || '未标注'}`,
-    `综合评分: ${r.overall_score || '-'}`,
-    '',
-    '📝 食材:',
-    ...(r.ingredients || []).map(i => `  • ${i}`),
-    '',
-    '👨‍🍳 做法:',
-    ...(r.steps || []).map((s, i) => `  ${i + 1}. ${s}`),
-  ]
-  if (r.reason) lines.push('', `💡 ${r.reason}`)
-  const text = lines.join('\n')
+function handleShare() {
+  showShareCard.value = true
+  nextTick(() => drawShareCard())
+}
 
-  if (navigator.share) {
-    try {
-      await navigator.share({ title: r.name, text })
-    } catch { /* user cancelled */ }
-  } else {
-    await navigator.clipboard.writeText(text)
-    shareToast.value = '已复制到剪贴板'
-    setTimeout(() => { shareToast.value = '' }, 2000)
+function drawShareCard() {
+  const canvas = shareCanvasRef.value
+  if (!canvas) return
+  const r = props.recipe
+  const ctx = canvas.getContext('2d')
+  const W = 600
+  const H = 800
+  canvas.width = W
+  canvas.height = H
+
+  // White background
+  ctx.fillStyle = '#FFF8F3'
+  ctx.fillRect(0, 0, W, H)
+
+  // Orange header bar
+  ctx.fillStyle = '#E8734A'
+  ctx.fillRect(0, 0, W, 100)
+
+  // Header text
+  ctx.fillStyle = '#fff'
+  ctx.font = 'bold 28px "Microsoft YaHei", sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillText(`🍳 ${r.name || '菜谱推荐'}`, W / 2, 48)
+
+  ctx.font = '14px "Microsoft YaHei", sans-serif'
+  ctx.fillStyle = 'rgba(255,255,255,0.9)'
+  const diff = r.difficulty || '未标注'
+  const score = r.overall_score || '-'
+  ctx.fillText(`难度: ${diff}    综合评分: ${score}`, W / 2, 78)
+
+  // Body
+  let y = 128
+  const colLeft = 40
+  const maxW = W - 80
+  ctx.textAlign = 'left'
+
+  // ── Ingredients ──
+  ctx.fillStyle = '#E8734A'
+  ctx.font = 'bold 16px "Microsoft YaHei", sans-serif'
+  ctx.fillText('📝 食材清单', colLeft, y)
+  y += 28
+
+  ctx.font = '14px "Microsoft YaHei", sans-serif'
+  ctx.fillStyle = '#333'
+  if (r.ingredients && r.ingredients.length) {
+    const ings = r.ingredients.slice(0, 10)
+    for (const ing of ings) {
+      ctx.fillText(`• ${ing}`, colLeft + 12, y)
+      y += 22
+    }
   }
+  y += 8
+
+  // ── Steps ──
+  if (y > 560) {
+    // If too many ingredients, start new "page" concept not feasible on single canvas
+    // Just compress
+  }
+
+  ctx.fillStyle = '#E8734A'
+  ctx.font = 'bold 16px "Microsoft YaHei", sans-serif'
+  ctx.fillText('👨‍🍳 做法步骤', colLeft, y)
+  y += 28
+
+  ctx.font = '13px "Microsoft YaHei", sans-serif'
+  ctx.fillStyle = '#444'
+  if (r.steps && r.steps.length) {
+    const displaySteps = r.steps.slice(0, 6)
+    for (let i = 0; i < displaySteps.length; i++) {
+      const label = `${i + 1}. `
+      const text = displaySteps[i]
+      ctx.fillText(label, colLeft, y)
+      // Wrap long text
+      let line = ''
+      let x = colLeft + ctx.measureText(label).width
+      for (const ch of text) {
+        const test = line + ch
+        if (ctx.measureText(test).width > maxW - (x - colLeft)) {
+          ctx.fillText(line, x, y)
+          y += 20
+          x = colLeft + 16
+          line = ch
+        } else {
+          line = test
+        }
+      }
+      if (line) ctx.fillText(line, x, y)
+      y += 22
+    }
+  }
+  y += 6
+
+  // ── Reason ──
+  if (r.reason) {
+    ctx.fillStyle = '#FFF0E8'
+    // reason background box
+    ctx.fillRect(colLeft - 8, y - 4, maxW + 16, 36)
+    ctx.fillStyle = '#666'
+    ctx.font = '12px "Microsoft YaHei", sans-serif'
+    wrapText(ctx, `💡 ${r.reason}`, colLeft, y + 14, maxW, 18)
+    y += 50
+  }
+
+  // ── Footer ──
+  if (y < H - 30) y = H - 30
+  ctx.fillStyle = '#CCC'
+  ctx.font = '11px "Microsoft YaHei", sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillText('由 AI 私厨助手生成', W / 2, y)
+}
+
+function wrapText(ctx, text, x, y, maxW, lineH) {
+  let line = ''
+  let cx = x
+  for (const ch of text) {
+    const test = line + ch
+    if (ctx.measureText(test).width > maxW) {
+      ctx.fillText(line, cx, y)
+      y += lineH
+      cx = x
+      line = ch
+    } else {
+      line = test
+    }
+  }
+  if (line) ctx.fillText(line, cx, y)
+}
+
+function downloadShareCard() {
+  const canvas = shareCanvasRef.value
+  if (!canvas) return
+  const link = document.createElement('a')
+  link.download = `${props.recipe.name || 'recipe'}.png`
+  link.href = canvas.toDataURL('image/png')
+  link.click()
 }
 
 function toggleFavorite() {
@@ -349,8 +464,26 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Share toast -->
-    <div v-if="shareToast" class="share-toast">{{ shareToast }}</div>
+    <!-- Share card modal -->
+    <Teleport to="body">
+      <div v-if="showShareCard" class="share-overlay" @click.self="showShareCard = false">
+        <div class="share-modal">
+          <div class="share-modal-header">
+            <h3>📤 保存菜谱卡片</h3>
+            <button class="share-close" @click="showShareCard = false">✕</button>
+          </div>
+          <div class="share-canvas-wrap">
+            <canvas ref="shareCanvasRef"></canvas>
+          </div>
+          <div class="share-modal-footer">
+            <button class="share-download-btn" @click="downloadShareCard">
+              保存图片
+            </button>
+            <span class="share-hint">长按或右键可保存到相册</span>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <StepReader
       :visible="showReader"
@@ -889,6 +1022,100 @@ onUnmounted(() => {
   font-size: 13px;
   z-index: 3000;
   animation: fadeIn 0.3s ease;
+}
+
+/* Share card modal */
+.share-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5000;
+}
+
+.share-modal {
+  background: var(--color-card);
+  border-radius: var(--radius-lg);
+  width: 500px;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+}
+
+.share-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.share-modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.share-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 4px;
+  line-height: 1;
+}
+
+.share-canvas-wrap {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  display: flex;
+  justify-content: center;
+  background: #f5f5f5;
+}
+
+.share-canvas-wrap canvas {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+.share-modal-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--color-border);
+}
+
+.share-download-btn {
+  padding: 10px 32px;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: background 0.2s;
+}
+
+.share-download-btn:hover {
+  background: var(--color-primary-hover);
+}
+
+.share-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
 }
 
 .reference-link {
