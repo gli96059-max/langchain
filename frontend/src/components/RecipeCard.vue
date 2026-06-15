@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, reactive, onUnmounted } from 'vue'
 
 const props = defineProps({
   recipe: { type: Object, required: true },
@@ -9,6 +9,7 @@ const props = defineProps({
 const emit = defineEmits(['favorite', 'unfavorite'])
 
 const showSteps = ref(false)
+const timers = reactive({})
 
 function toggleFavorite() {
   if (props.favorited) {
@@ -33,6 +34,55 @@ function scoreColor(score) {
   if (score >= 70) return 'var(--color-warning)'
   return 'var(--color-text-muted)'
 }
+
+// ── Timer ──────────────────────────────────────────────────────────
+
+function parseMinutes(text) {
+  const m = text.match(/(\d+)\s*[分钟分]/)
+  if (m) return parseInt(m[1]) * 60
+  const s = text.match(/(\d+)\s*秒/)
+  if (s) return parseInt(s[1])
+  return null
+}
+
+function startTimer(stepIndex, stepText) {
+  const total = parseMinutes(stepText)
+  if (!total) return
+  if (timers[stepIndex]) return
+
+  const timer = reactive({ remaining: total, running: true, interval: null })
+  timers[stepIndex] = timer
+
+  timer.interval = setInterval(() => {
+    timer.remaining--
+    if (timer.remaining <= 0) {
+      clearInterval(timer.interval)
+      timer.remaining = 0
+      timer.running = false
+      timer.interval = null
+    }
+  }, 1000)
+}
+
+function stopTimer(stepIndex) {
+  const t = timers[stepIndex]
+  if (!t) return
+  if (t.interval) clearInterval(t.interval)
+  delete timers[stepIndex]
+}
+
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  if (m > 0) return `${m}分${s > 0 ? s + '秒' : ''}`
+  return `${s}秒`
+}
+
+onUnmounted(() => {
+  Object.values(timers).forEach(t => {
+    if (t.interval) clearInterval(t.interval)
+  })
+})
 </script>
 
 <template>
@@ -100,7 +150,23 @@ function scoreColor(score) {
         <div v-if="showSteps && recipe.steps?.length" class="steps-list">
           <div v-for="(step, i) in recipe.steps" :key="i" class="step-item">
             <span class="step-num">{{ i + 1 }}</span>
-            <span class="step-text">{{ step }}</span>
+            <div class="step-content">
+              <span class="step-text">{{ step }}</span>
+              <div v-if="parseMinutes(step)" class="step-timer">
+                <button
+                  v-if="!timers[i]"
+                  class="timer-start-btn"
+                  @click="startTimer(i, step)"
+                  title="开始计时"
+                >
+                  ⏱ 计时
+                </button>
+                <div v-else class="timer-display" :class="{ done: !timers[i].remaining }">
+                  <span class="timer-time">{{ formatTime(timers[i].remaining) }}</span>
+                  <button class="timer-stop-btn" @click="stopTimer(i)" title="取消">✕</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -343,8 +409,79 @@ function scoreColor(score) {
   justify-content: center;
 }
 
+.step-content {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .step-text {
   color: var(--color-text);
+}
+
+.step-timer {
+  flex-shrink: 0;
+}
+
+.timer-start-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border-radius: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  transition: all 0.2s;
+}
+
+.timer-start-btn:hover {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.timer-display {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  animation: timerPulse 1s ease-in-out infinite;
+}
+
+.timer-display.done {
+  background: var(--color-success);
+  animation: none;
+}
+
+.timer-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-stop-btn {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.7);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.timer-stop-btn:hover {
+  color: #fff;
+}
+
+@keyframes timerPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
 }
 
 /* Reason */
