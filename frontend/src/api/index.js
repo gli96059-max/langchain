@@ -32,6 +32,20 @@ export function deleteSession(id) {
   return request('DELETE', `/sessions/${id}`)
 }
 
+// ── Favorites ─────────────────────────────────────────────────────
+
+export function listFavorites() {
+  return request('GET', '/favorites')
+}
+
+export function addFavorite(name, recipeData) {
+  return request('POST', '/favorites', { name, recipe_data: recipeData })
+}
+
+export function removeFavorite(id) {
+  return request('DELETE', `/favorites/${id}`)
+}
+
 // ── Image upload ──────────────────────────────────────────────────
 
 export async function uploadImage(base64Data) {

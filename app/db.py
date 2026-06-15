@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -32,6 +33,13 @@ def init_db():
             image_url TEXT,
             created_at TEXT NOT NULL,
             FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS favorites (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            recipe_data TEXT NOT NULL,
+            created_at TEXT NOT NULL
         );
     """)
     conn.commit()
@@ -121,6 +129,43 @@ def get_messages(session_id: str) -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ── Favorites ─────────────────────────────────────────────────────────
+
+def add_favorite(name: str, recipe_data: dict) -> dict:
+    conn = get_connection()
+    fid = uuid.uuid4().hex[:12]
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO favorites (id, name, recipe_data, created_at) VALUES (?, ?, ?, ?)",
+        (fid, name, json.dumps(recipe_data, ensure_ascii=False), now),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM favorites WHERE id = ?", (fid,)).fetchone()
+    conn.close()
+    return dict(row)
+
+
+def remove_favorite(favorite_id: str):
+    conn = get_connection()
+    conn.execute("DELETE FROM favorites WHERE id = ?", (favorite_id,))
+    conn.commit()
+    conn.close()
+
+
+def list_favorites() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM favorites ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["recipe_data"] = json.loads(d["recipe_data"])
+        result.append(d)
+    return result
 
 
 init_db()

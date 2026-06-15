@@ -2,14 +2,19 @@
 import { ref, onMounted } from 'vue'
 import SessionSidebar from './components/SessionSidebar.vue'
 import ChatView from './components/ChatView.vue'
-import { createSession, listSessions, getSession } from './api/index.js'
+import { createSession, listSessions, listFavorites, addFavorite, removeFavorite } from './api/index.js'
 
 const sessions = ref([])
 const activeSessionId = ref(null)
 const sidebarOpen = ref(true)
+const favorites = ref([])
 
 async function loadSessions() {
   sessions.value = await listSessions()
+}
+
+async function loadFavorites() {
+  favorites.value = await listFavorites()
 }
 
 async function handleSelectSession(id) {
@@ -24,11 +29,22 @@ async function handleNewSession() {
   if (window.innerWidth < 768) sidebarOpen.value = false
 }
 
-onMounted(async () => {
-  await loadSessions()
-  if (sessions.value.length > 0) {
-    activeSessionId.value = sessions.value[0].id
+async function handleFavorite(recipe) {
+  await addFavorite(recipe.name, recipe)
+  await loadFavorites()
+}
+
+async function handleUnfavorite(recipe) {
+  const fav = favorites.value.find(f => f.recipe_data?.name === recipe.name)
+  if (fav) {
+    await removeFavorite(fav.id)
+    await loadFavorites()
   }
+}
+
+onMounted(async () => {
+  await handleNewSession()
+  await loadFavorites()
 })
 </script>
 
@@ -38,6 +54,7 @@ onMounted(async () => {
       :sessions="sessions"
       :active-id="activeSessionId"
       :open="sidebarOpen"
+      :favorites="favorites"
       @select="handleSelectSession"
       @new-session="handleNewSession"
       @close-sidebar="sidebarOpen = false"
@@ -56,6 +73,10 @@ onMounted(async () => {
       <ChatView
         v-if="activeSessionId"
         :session-id="activeSessionId"
+        :favorites="favorites"
+        @message-completed="loadSessions"
+        @favorite="handleFavorite"
+        @unfavorite="handleUnfavorite"
       />
       <div v-else class="empty-state">
         <div class="empty-content">

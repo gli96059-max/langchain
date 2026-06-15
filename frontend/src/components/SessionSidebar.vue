@@ -1,13 +1,16 @@
 <script setup>
+import { ref } from 'vue'
 import { deleteSession } from '../api/index.js'
 
 const props = defineProps({
   sessions: { type: Array, default: () => [] },
   activeId: { type: String, default: null },
   open: { type: Boolean, default: true },
+  favorites: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['select', 'new-session', 'close-sidebar', 'sessions-updated'])
+const showFavs = ref(true)
 
 async function handleDelete(sessionId, e) {
   e.stopPropagation()
@@ -42,6 +45,24 @@ function formatTime(iso) {
         </svg>
         新对话
       </button>
+    </div>
+
+    <div v-if="favorites.length" class="fav-section">
+      <button class="fav-toggle" @click="showFavs = !showFavs">
+        <span class="fav-toggle-icon" :class="{ open: showFavs }">▸</span>
+        <span class="fav-toggle-label">我的收藏</span>
+        <span class="fav-count">{{ favorites.length }}</span>
+      </button>
+      <div v-if="showFavs" class="fav-list">
+        <div
+          v-for="fav in favorites"
+          :key="fav.id"
+          class="fav-item"
+        >
+          <span class="fav-icon">❤️</span>
+          <span class="fav-name">{{ fav.recipe_data?.name || fav.name }}</span>
+        </div>
+      </div>
     </div>
 
     <div class="session-list">
@@ -215,5 +236,88 @@ function formatTime(iso) {
 .delete-btn:hover {
   color: var(--color-danger);
   background: rgba(244, 67, 54, 0.08);
+}
+
+/* Favorites section */
+.fav-section {
+  border-bottom: 1px solid var(--color-border);
+  padding: 8px;
+}
+
+.fav-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+}
+
+.fav-toggle:hover {
+  background: var(--color-sidebar-hover);
+}
+
+.fav-toggle-icon {
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+.fav-toggle-icon.open {
+  transform: rotate(90deg);
+}
+
+.fav-toggle-label {
+  flex: 1;
+  text-align: left;
+}
+
+.fav-count {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+.fav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 4px;
+}
+
+.fav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 28px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.fav-item:hover {
+  background: var(--color-sidebar-hover);
+}
+
+.fav-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.fav-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

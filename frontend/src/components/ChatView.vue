@@ -1,12 +1,20 @@
 <script setup>
-import { ref, nextTick, watch } from 'vue'
+import { ref, nextTick, watch, computed } from 'vue'
 import { chatStream, readSSE, getSession } from '../api/index.js'
 import RecipeCard from './RecipeCard.vue'
 import ChatInput from './ChatInput.vue'
 
 const props = defineProps({
   sessionId: { type: String, required: true },
+  favorites: { type: Array, default: () => [] },
 })
+const emit = defineEmits(['message-completed', 'favorite', 'unfavorite'])
+
+const favoriteNames = computed(() => new Set(props.favorites.map(f => f.recipe_data?.name)))
+
+function isFavorited(recipe) {
+  return favoriteNames.value.has(recipe.name)
+}
 
 const messages = ref([])
 const isStreaming = ref(false)
@@ -76,6 +84,7 @@ async function handleSend({ text, imageBase64 }) {
     statusStep.value = ''
 
     scrollToBottom()
+    emit('message-completed')
   }
 }
 
@@ -115,6 +124,9 @@ function scrollToBottom() {
                 v-for="(recipe, ri) in msg.recipes"
                 :key="ri"
                 :recipe="recipe"
+                :favorited="isFavorited(recipe)"
+                @favorite="(r) => emit('favorite', r)"
+                @unfavorite="(r) => emit('unfavorite', r)"
               />
               <div v-if="msg.summary" class="summary-text">
                 <strong>💡 总结：</strong>{{ msg.summary }}

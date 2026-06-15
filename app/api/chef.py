@@ -16,6 +16,9 @@ from app.db import (
     update_session_title,
     add_message,
     get_messages,
+    add_favorite,
+    remove_favorite,
+    list_favorites,
 )
 from app.agents.project import build_chief_agent
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -54,6 +57,11 @@ async def _get_agent():
 class ChatRequest(BaseModel):
     message: str = Field(default="", description="用户输入文本")
     image_base64: str | None = Field(default=None, description="图片的base64编码")
+
+
+class FavoriteRequest(BaseModel):
+    name: str = Field(description="菜谱名称")
+    recipe_data: dict = Field(description="完整菜谱数据")
 
 
 class SessionResponse(BaseModel):
@@ -201,6 +209,25 @@ def api_delete_session(session_id: str):
     if not get_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
     delete_session(session_id)
+    return {"ok": True}
+
+
+# ── Favorites endpoints ──────────────────────────────────────────────
+
+@router.get("/favorites")
+def api_list_favorites():
+    return list_favorites()
+
+
+@router.post("/favorites")
+def api_add_favorite(req: FavoriteRequest):
+    fav = add_favorite(req.name, req.recipe_data)
+    return fav
+
+
+@router.delete("/favorites/{favorite_id}")
+def api_remove_favorite(favorite_id: str):
+    remove_favorite(favorite_id)
     return {"ok": True}
 
 
