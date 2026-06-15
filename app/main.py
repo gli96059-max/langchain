@@ -1,8 +1,9 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from app.api.chef import router as chef_router
 
@@ -28,3 +29,25 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # ── API routes ─────────────────────────────────────────────────────
 app.include_router(chef_router)
+
+# ── Serve built frontend (SPA fallback) ────────────────────────────
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+if FRONTEND_DIST.exists():
+    @app.middleware("http")
+    async def spa_fallback(request: Request, call_next):
+        # Let API and upload requests pass through
+        if request.url.path.startswith(("/api/", "/uploads/")):
+            return await call_next(request)
+
+        # Try to serve a static frontend file
+        relative = request.url.path.lstrip("/") or "index.html"
+        file_path = FRONTEND_DIST / relative
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(str(file_path))
+
+        # Pass to router; if 404, serve SPA index.html
+        response = await call_next(request)
+        if response.status_code == 404:
+            return FileResponse(str(FRONTEND_DIST / "index.html"))
+        return response
