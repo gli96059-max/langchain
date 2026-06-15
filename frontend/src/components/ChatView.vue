@@ -15,16 +15,11 @@ const messages = ref([...props.initialMessages])
 const isStreaming = ref(false)
 const statusMsg = ref('')
 const statusStep = ref('')
-const pendingRecipes = ref([])
-const pendingSummary = ref('')
-const pendingConversation = ref('')
 const messagesEnd = ref(null)
 
 watch(() => props.sessionId, async () => {
   const data = await getSession(props.sessionId)
   messages.value = data.messages || []
-  pendingRecipes.value = []
-  pendingSummary.value = ''
   statusMsg.value = ''
   statusStep.value = ''
   await nextTick()
@@ -35,14 +30,10 @@ async function handleSend({ text, imageBase64 }) {
   if (!text.trim() && !imageBase64) return
   if (isStreaming.value) return
 
-  const userMsg = { role: 'user', content: text, image_url: null }
-  messages.value.push(userMsg)
+  messages.value.push({ role: 'user', content: text, image_url: null })
   isStreaming.value = true
-  pendingRecipes.value = []
-  pendingSummary.value = []
-  pendingConversation.value = ''
-  statusMsg.value = '⏳ 准备中...'
-  statusStep.value = 'connecting'
+  statusMsg.value = '⏳ 思考中...'
+  statusStep.value = 'thinking'
   scrollToBottom()
 
   try {
@@ -50,21 +41,19 @@ async function handleSend({ text, imageBase64 }) {
 
     for await (const { event, data } of readSSE(response)) {
       if (event === 'status') {
-        statusStep.value = data.step
         statusMsg.value = data.message || ''
-        if (data.ingredients) {
-          messages.value.push({
-            role: 'assistant_ingredients',
-            content: data.ingredients,
-          })
-        }
+        statusStep.value = data.step || ''
+      } else if (event === 'response') {
+        // Natural language reply from the agent
+        messages.value.push({ role: 'assistant', content: data.text || '' })
+        statusStep.value = 'response'
       } else if (event === 'result') {
-        pendingRecipes.value = data.recipes || []
-        pendingSummary.value = data.summary || ''
-        statusStep.value = 'done'
-      } else if (event === 'conversation') {
-        // Conversation mode: plain text response
-        pendingConversation.value = data.message || ''
+        // Structured recipe data for cards
+        messages.value.push({
+          role: 'assistant_recipes',
+          recipes: data.recipes || [],
+          summary: data.summary || '',
+        })
         statusStep.value = 'done'
       } else if (event === 'error') {
         messages.value.push({ role: 'assistant', content: `❌ ${data.message}` })
@@ -75,24 +64,9 @@ async function handleSend({ text, imageBase64 }) {
   } catch (err) {
     messages.value.push({ role: 'assistant', content: `❌ 请求失败: ${err.message}` })
   } finally {
-    if (pendingConversation.value) {
-      messages.value.push({
-        role: 'assistant',
-        content: pendingConversation.value,
-      })
-    } else if (pendingRecipes.value.length > 0) {
-      messages.value.push({
-        role: 'assistant_recipes',
-        recipes: pendingRecipes.value,
-        summary: pendingSummary.value,
-      })
-    }
     isStreaming.value = false
     statusMsg.value = ''
     statusStep.value = ''
-    pendingRecipes.value = []
-    pendingSummary.value = ''
-    pendingConversation.value = ''
 
     const data = await getSession(props.sessionId)
     emit('messages-updated', data.messages || [])
@@ -120,20 +94,11 @@ function scrollToBottom() {
             </div>
           </div>
 
-          <!-- Text assistant message -->
+          <!-- Assistant text message -->
           <div v-else-if="msg.role === 'assistant'" class="message-row assistant-row">
             <div class="assistant-avatar">🍳</div>
             <div class="message-bubble assistant-bubble">
-              <p>{{ msg.content }}</p>
-            </div>
-          </div>
-
-          <!-- Ingredient recognition -->
-          <div v-else-if="msg.role === 'assistant_ingredients'" class="message-row assistant-row">
-            <div class="assistant-avatar">🍳</div>
-            <div class="message-bubble assistant-bubble ingredients-bubble">
-              <div class="bubble-label">📋 识别到的食材</div>
-              <p class="ingredients-text">{{ msg.content }}</p>
+              <p style="white-space: pre-wrap;">{{ msg.content }}</p>
             </div>
           </div>
 
@@ -141,7 +106,6 @@ function scrollToBottom() {
           <div v-else-if="msg.role === 'assistant_recipes'" class="message-row assistant-row">
             <div class="assistant-avatar">🍳</div>
             <div class="recipes-wrapper">
-              <div class="recipes-label">🥘 推荐菜谱</div>
               <RecipeCard
                 v-for="(recipe, ri) in msg.recipes"
                 :key="ri"
@@ -244,23 +208,6 @@ function scrollToBottom() {
   border-bottom-left-radius: 4px;
 }
 
-.ingredients-bubble {
-  background: #F0FFF0;
-  border-color: #C8E6C9;
-}
-
-.bubble-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-success);
-  margin-bottom: 6px;
-}
-
-.ingredients-text {
-  white-space: pre-wrap;
-  color: var(--color-text);
-}
-
 .img-badge {
   display: inline-block;
   margin-top: 6px;
@@ -273,12 +220,6 @@ function scrollToBottom() {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.recipes-label {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-primary);
 }
 
 .summary-text {
@@ -312,14 +253,13 @@ function scrollToBottom() {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
-.status-indicator.searching .status-dot,
-.status-indicator.searching_done .status-dot {
-  background: var(--color-warning);
-}
-
 .status-indicator.done .status-dot {
   background: var(--color-success);
   animation: none;
+}
+
+.status-indicator.response .status-dot {
+  background: var(--color-warning);
 }
 
 .status-indicator.error .status-dot {

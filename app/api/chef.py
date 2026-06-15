@@ -3,7 +3,6 @@ import uuid
 import base64
 import asyncio
 from pathlib import Path
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -18,16 +17,14 @@ from app.db import (
     add_message,
     get_messages,
 )
-from app.agents.project import build_chef_graph, ChefState
-from app.agents.schemas import Recipe
-
+from app.agents.project import build_chief_agent
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain_core.messages import HumanMessage, AIMessage
 import aiosqlite
 
 router = APIRouter(prefix="/api", tags=["chef"])
 
-# ── Shared LangGraph checkpointer ──────────────────────────────────
+# ── Shared checkpointer ────────────────────────────────────────────
 CHECKPOINT_DB = Path(__file__).resolve().parent.parent.parent / "resources" / "checkpoint.db"
 CHECKPOINT_DB.parent.mkdir(parents=True, exist_ok=True)
 
@@ -35,26 +32,24 @@ _checkpoint_conn = None
 
 
 async def _get_checkpointer():
-    """Return (cached) async checkpointer for the chef graph."""
     global _checkpoint_conn
     if _checkpoint_conn is None:
         _checkpoint_conn = await aiosqlite.connect(str(CHECKPOINT_DB))
     return AsyncSqliteSaver(_checkpoint_conn)
 
 
-_compiled_agent_cache = None
+_agent_cache = None
 
 
-async def _get_compiled_agent():
-    """Return (cached) chef graph compiled with the shared checkpointer."""
-    global _compiled_agent_cache
-    if _compiled_agent_cache is None:
+async def _get_agent():
+    global _agent_cache
+    if _agent_cache is None:
         checkpointer = await _get_checkpointer()
-        _compiled_agent_cache = build_chef_graph(checkpointer=checkpointer)
-    return _compiled_agent_cache
+        _agent_cache = build_chief_agent(checkpointer=checkpointer)
+    return _agent_cache
 
 
-# ── Request / Response models ──────────────────────────────────────
+# ── Models ─────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
     message: str = Field(default="", description="用户输入文本")
@@ -68,51 +63,97 @@ class SessionResponse(BaseModel):
     updated_at: str
 
 
-class MessageResponse(BaseModel):
-    id: int
-    session_id: str
-    role: str
-    content: str
-    image_url: str | None
-    created_at: str
-
-
 class CreateSessionResponse(BaseModel):
     session: SessionResponse
 
 
-# ── Helper: generate session title from first message ──────────────
+# ── Helpers ────────────────────────────────────────────────────────
 
 def _auto_title(text: str) -> str:
-    """Generate a short session title from the first user message."""
     text = text.strip()[:20]
     return text if text else "新对话"
 
 
-# ── SSE event helpers ──────────────────────────────────────────────
-
 def _sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _extract_assistant_text(response) -> str:
+    """Extract the assistant's reply text from the agent response."""
+    if isinstance(response, dict):
+        msgs = response.get("messages")
+        if msgs:
+            for m in reversed(msgs):
+                role = getattr(m, "type", getattr(m, "role", ""))
+                if role in ("ai", "assistant", "AIMessage"):
+                    return getattr(m, "content", "") or ""
+        output = response.get("output", "")
+        if output:
+            return output
+    if hasattr(response, "content"):
+        return response.content or ""
+    return str(response)
+
+
+async def extract_recipes(text: str) -> dict | None:
+    """Use Qwen to extract structured recipe data from the agent's natural response."""
+    prompt = f"""从以下回复中提取菜谱推荐信息。如果包含菜谱推荐，按下面的 JSON 格式输出。
+如果完全不包含菜谱推荐（比如只是打招呼、闲聊、回答问题），只输出: {{"has_recipes": false}}
+
+JSON 格式:
+{{{{
+  "recipes": [
+    {{{{
+      "name": "菜名",
+      "ingredients": ["食材1", "食材2"],
+      "steps": ["步骤1", "步骤2"],
+      "difficulty": "简单/中等/困难",
+      "nutrition_score": 85,
+      "overall_score": 90,
+      "reason": "推荐理由",
+      "image_url": null,
+      "reference_url": null
+    }}}}
+  ],
+  "summary": "总结建议"
+}}}}
+
+回复内容:
+{text}"""
+    from model_config import qwen
+    try:
+        response = await asyncio.to_thread(qwen.invoke, [HumanMessage(content=prompt)])
+        content = response.content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+        if content.endswith("```"):
+            content = content.rsplit("```", 1)[0]
+        if content.startswith("json"):
+            content = content[4:].strip()
+        content = content.strip()
+        data = json.loads(content)
+        if data.get("has_recipes") is False:
+            return None
+        return data
+    except Exception:
+        return None
 
 
 # ── Session endpoints ──────────────────────────────────────────────
 
 @router.post("/sessions", response_model=CreateSessionResponse)
 def api_create_session():
-    """Create a new chat session."""
     session = create_session()
     return CreateSessionResponse(session=SessionResponse(**session))
 
 
 @router.get("/sessions", response_model=list[SessionResponse])
 def api_list_sessions():
-    """List all sessions ordered by last update."""
     return [SessionResponse(**s) for s in list_sessions()]
 
 
 @router.get("/sessions/{session_id}", response_model=dict)
 def api_get_session(session_id: str):
-    """Get a session with its message history."""
     session = get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -122,22 +163,20 @@ def api_get_session(session_id: str):
 
 @router.delete("/sessions/{session_id}")
 def api_delete_session(session_id: str):
-    """Delete a session."""
     if not get_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
     delete_session(session_id)
     return {"ok": True}
 
 
-# ── Chat endpoint (SSE streaming) ─────────────────────────────────
+# ── Chat endpoint ─────────────────────────────────────────────────
 
 @router.post("/chat/{session_id}")
 async def api_chat(session_id: str, req: ChatRequest):
-    """Send a message and stream the Chef Agent's response via SSE."""
     if not get_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # 1. Build human message (text + optional image)
+    # Build human message (text + optional image)
     content_parts = []
     if req.message:
         content_parts.append({"type": "text", "text": req.message})
@@ -146,101 +185,54 @@ async def api_chat(session_id: str, req: ChatRequest):
             "type": "image_url",
             "image_url": {"url": f"data:image/png;base64,{req.image_base64}"},
         })
-
     if not content_parts:
         raise HTTPException(status_code=400, detail="Message or image is required")
 
     human_msg = HumanMessage(content=content_parts if len(content_parts) > 1 else req.message)
 
-    # 2. Save user message to DB
+    # DB: save user message & auto-title
     add_message(session_id, "user", req.message, None)
-
-    # 3. Auto-title on first message
     existing = get_messages(session_id)
     if len(existing) == 1:
         update_session_title(session_id, _auto_title(req.message))
 
     config = {"configurable": {"thread_id": session_id}}
 
-    # 4. SSE streaming generator
     async def event_stream():
-        agent = await _get_compiled_agent()
+        agent = await _get_agent()
 
         yield _sse_event("status", {"step": "thinking", "message": "思考中..."})
-
-        recipes_result = []
-        summary_result = ""
-        conversation_text = ""
         error_occurred = False
-        seen_steps = set()
-        is_recipe_flow = True
+        assistant_text = ""
 
         try:
-            async for state in agent.astream(
+            # Run the agent (sync invoke in thread)
+            response = await asyncio.to_thread(
+                agent.invoke,
                 {"messages": [human_msg]},
                 config,
-                stream_mode="values",
-            ):
-                step = state.get("current_step", "")
-                if step in seen_steps:
-                    continue
-                if step:
-                    seen_steps.add(step)
+            )
 
-                if step == "意图识别完成":
-                    is_recipe_flow = state.get("is_recipe_query", True)
-                    if not is_recipe_flow:
-                        yield _sse_event("status", {
-                            "step": "chatting",
-                            "message": "正在回复...",
-                        })
+            assistant_text = _extract_assistant_text(response)
 
-                elif step == "对话模式":
-                    msgs = state.get("messages", [])
-                    if msgs:
-                        last = msgs[-1]
-                        conversation_text = last.content if hasattr(last, "content") else str(last)
+            if not assistant_text:
+                yield _sse_event("error", {"message": "未收到有效回复"})
+                add_message(session_id, "assistant", "抱歉，我没有生成有效回复。", None)
+                return
 
-                elif step == "食材识别完成":
-                    yield _sse_event("status", {
-                        "step": "ingredients_done",
-                        "message": f"食材识别完成！\n{state.get('ingredients', '')}",
-                        "ingredients": state.get("ingredients", ""),
-                    })
-                    yield _sse_event("status", {
-                        "step": "searching",
-                        "message": "正在搜索菜谱...",
-                    })
+            # Send the natural language response
+            yield _sse_event("response", {"text": assistant_text})
 
-                elif step == "菜谱搜索完成":
-                    yield _sse_event("status", {
-                        "step": "searching_done",
-                        "message": "菜谱搜索完成，正在评估推荐...",
-                    })
-
-                elif step == "菜谱评估完成":
-                    recipes_raw = state.get("recipes", [])
-                    summary_raw = state.get("summary", "")
-                    recipes_result = [r.model_dump() if hasattr(r, 'model_dump') else r for r in recipes_raw]
-                    summary_result = summary_raw
-
-            # 5. Send final result
-            if not is_recipe_flow and conversation_text:
-                yield _sse_event("conversation", {"message": conversation_text})
-                add_message(session_id, "assistant", conversation_text, None)
-
-            elif recipes_result:
-                yield _sse_event("result", {
-                    "recipes": recipes_result,
-                    "summary": summary_result,
-                })
-                names = [r.get("name", "") for r in recipes_result]
-                recipe_summary_text = f"推荐了 {len(recipes_result)} 个菜谱: {', '.join(names)}"
-                add_message(session_id, "assistant", recipe_summary_text, None)
-
+            # Try to extract structured recipe data
+            recipes_data = await extract_recipes(assistant_text)
+            if recipes_data:
+                yield _sse_event("result", recipes_data)
+                summary = recipes_data.get("summary", "")
+                names = [r.get("name", "") for r in recipes_data.get("recipes", [])]
+                db_text = f"推荐了 {len(names)} 个菜谱: {', '.join(names)}"
+                add_message(session_id, "assistant", db_text, None)
             else:
-                yield _sse_event("error", {"message": "未能生成菜谱推荐，请重试"})
-                add_message(session_id, "assistant", "抱歉，我没能成功生成菜谱推荐，请再试一次。", None)
+                add_message(session_id, "assistant", assistant_text, None)
 
         except Exception as e:
             error_occurred = True
@@ -261,14 +253,13 @@ async def api_chat(session_id: str, req: ChatRequest):
     )
 
 
-# ── Image upload endpoint ─────────────────────────────────────────
+# ── Image upload ──────────────────────────────────────────────────
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads"
 
 
 @router.post("/upload")
 async def api_upload(image_base64: str):
-    """Upload a base64-encoded image and return its URL."""
     try:
         header, _, b64_data = image_base64.partition(",")
         if not b64_data:
