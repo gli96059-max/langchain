@@ -14,7 +14,7 @@ from app.agents.schemas import Recipe
 from model_config import qwen
 from tools import web_search
 
-SYSTEM_PROMPT = """
+RECIPE_SYSTEM_PROMPT = """
 你是AI私厨助手。你帮助用户根据现有食材推荐菜谱。
 
 # 核心流程
@@ -31,6 +31,21 @@ SYSTEM_PROMPT = """
 确保结果丰富多样，每次推荐3-5个菜谱。
 """
 
+CONVERSATION_SYSTEM_PROMPT = """
+你是「AI私厨助手」—— 一个专注于美食和烹饪的智能助手。
+
+# 你的能力
+- 识别食材（支持图片识别）
+- 基于现有食材搜索并推荐菜谱
+- 从营养和难度维度评估菜谱
+- 提供做法步骤
+
+# 对话要求
+- 如果用户只是打招呼或闲聊，友好回应并主动询问是否需要推荐菜谱
+- 如果用户问其他问题，礼貌引导到美食/烹饪话题
+- 保持热情、专业的私厨形象
+"""
+
 
 class ChefState(TypedDict):
     """厨师助手的对话状态"""
@@ -40,11 +55,62 @@ class ChefState(TypedDict):
     recipes: list[Recipe]
     summary: str
     current_step: str
+    is_recipe_query: bool
+
+
+def call_classify_intent(state: ChefState, config: RunnableConfig) -> dict:
+    """
+    Node 1: 判断用户意图 —— 是菜谱请求还是闲聊
+    """
+    messages = list(state["messages"])
+    last_msg = messages[-1].content if messages else ""
+
+    system = SystemMessage(content="""判断用户输入是否关于食材/菜谱/做饭。
+如果是涉及食材识别、菜谱推荐、做饭烹饪的请求，或者用户上传了食材图片/清单，回复: RECIPE
+如果只是打招呼、闲聊、问候、或与烹饪无关的话题，回复: CHAT
+只回复这两个词之一，不要加其他内容。""")
+
+    response = qwen.invoke([system, HumanMessage(content=str(last_msg))])
+    intent = response.content.strip().upper()
+    is_recipe = "RECIPE" in intent
+
+    return {
+        "is_recipe_query": is_recipe,
+        "current_step": "意图识别完成",
+    }
+
+
+def route_after_intent(state: ChefState) -> str:
+    """根据意图决定下一个节点"""
+    if state.get("is_recipe_query", False):
+        return "identify_ingredients"
+    return "conversation_reply"
+
+
+def call_conversation_reply(state: ChefState, config: RunnableConfig) -> dict:
+    """
+    Node (闲聊分支): 回应问候或非菜谱类对话
+    """
+    messages = list(state["messages"])
+    # Only pass the most recent message for context
+    last_human = None
+    for m in reversed(messages):
+        if isinstance(m, HumanMessage):
+            last_human = m
+            break
+
+    system = SystemMessage(content=CONVERSATION_SYSTEM_PROMPT)
+    response = qwen.invoke([system, last_human] if last_human else [system, HumanMessage(content="你好")])
+
+    return {
+        "current_step": "对话模式",
+        "messages": [response],
+    }
 
 
 def call_identify_ingredients(state: ChefState, config: RunnableConfig) -> dict:
     """
-    Node 1: 使用 Qwen 多模态模型识别用户提供的食材
+    Node (菜谱分支): 使用 Qwen 多模态模型识别用户提供的食材
     """
     messages = list(state["messages"])
 
@@ -60,7 +126,7 @@ def call_identify_ingredients(state: ChefState, config: RunnableConfig) -> dict:
 
 def call_search_recipes(state: ChefState, config: RunnableConfig) -> dict:
     """
-    Node 2: 根据食材搜索菜谱
+    Node (菜谱分支): 根据食材搜索菜谱
     """
     ingredients = state.get("ingredients", "")
     query = f"用以下食材可以做哪些菜: {ingredients}"
@@ -74,7 +140,7 @@ def call_search_recipes(state: ChefState, config: RunnableConfig) -> dict:
 
 def call_evaluate_recipes(state: ChefState, config: RunnableConfig) -> dict:
     """
-    Node 3: 使用 Qwen 评估搜索结果，输出结构化菜谱
+    Node (菜谱分支): 使用 Qwen 评估搜索结果，输出结构化菜谱
     """
     ingredients = state.get("ingredients", "")
     search_results = state.get("search_results", "")
@@ -86,9 +152,9 @@ def call_evaluate_recipes(state: ChefState, config: RunnableConfig) -> dict:
 搜索结果: {search_results}
 
 请按以下JSON格式输出推荐结果（包含3-5个菜谱）:
-{{
+{{{{
   "recipes": [
-    {{
+    {{{{
       "name": "菜名",
       "ingredients": ["食材1", "食材2"],
       "steps": ["步骤1", "步骤2", "步骤3"],
@@ -98,10 +164,10 @@ def call_evaluate_recipes(state: ChefState, config: RunnableConfig) -> dict:
       "reason": "推荐理由",
       "image_url": "搜索结果中的成品图片URL（如果有）",
       "reference_url": "参考链接（如果有）"
-    }}
+    }}}}
   ],
   "summary": "总结建议"
-}}
+}}}}
 
 要求:
 1. 确保菜谱覆盖不同口味和做法
@@ -145,14 +211,27 @@ def call_evaluate_recipes(state: ChefState, config: RunnableConfig) -> dict:
 def build_chef_graph(checkpointer=None) -> StateGraph:
     builder = StateGraph(ChefState)
 
+    # ── Nodes ──
+    builder.add_node("classify_intent", call_classify_intent)
+    builder.add_node("conversation_reply", call_conversation_reply)
     builder.add_node("identify_ingredients", call_identify_ingredients)
     builder.add_node("search_recipes", call_search_recipes)
     builder.add_node("evaluate_recipes", call_evaluate_recipes)
 
-    builder.add_edge(START, "identify_ingredients")
+    # ── Edges ──
+    builder.add_edge(START, "classify_intent")
+    builder.add_conditional_edges(
+        "classify_intent",
+        route_after_intent,
+        {
+            "identify_ingredients": "identify_ingredients",
+            "conversation_reply": "conversation_reply",
+        },
+    )
     builder.add_edge("identify_ingredients", "search_recipes")
     builder.add_edge("search_recipes", "evaluate_recipes")
     builder.add_edge("evaluate_recipes", END)
+    builder.add_edge("conversation_reply", END)
 
     return builder.compile(checkpointer=checkpointer)
 

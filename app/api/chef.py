@@ -166,29 +166,42 @@ async def api_chat(session_id: str, req: ChatRequest):
     async def event_stream():
         agent = await _get_compiled_agent()
 
-        # Send initial status
-        yield _sse_event("status", {"step": "identifying", "message": "正在识别食材..."})
+        yield _sse_event("status", {"step": "thinking", "message": "思考中..."})
 
         recipes_result = []
         summary_result = ""
+        conversation_text = ""
         error_occurred = False
-        seen_steps = set()  # Guard against checkpoint replay of stale state
+        seen_steps = set()
+        is_recipe_flow = True
 
         try:
-            # Run graph in thread (sync calls), stream state after each node
             async for state in agent.astream(
                 {"messages": [human_msg]},
                 config,
                 stream_mode="values",
             ):
                 step = state.get("current_step", "")
-                # Skip stale steps replayed from a previous checkpoint
                 if step in seen_steps:
                     continue
                 if step:
                     seen_steps.add(step)
 
-                if step == "食材识别完成":
+                if step == "意图识别完成":
+                    is_recipe_flow = state.get("is_recipe_query", True)
+                    if not is_recipe_flow:
+                        yield _sse_event("status", {
+                            "step": "chatting",
+                            "message": "正在回复...",
+                        })
+
+                elif step == "对话模式":
+                    msgs = state.get("messages", [])
+                    if msgs:
+                        last = msgs[-1]
+                        conversation_text = last.content if hasattr(last, "content") else str(last)
+
+                elif step == "食材识别完成":
                     yield _sse_event("status", {
                         "step": "ingredients_done",
                         "message": f"食材识别完成！\n{state.get('ingredients', '')}",
@@ -211,18 +224,20 @@ async def api_chat(session_id: str, req: ChatRequest):
                     recipes_result = [r.model_dump() if hasattr(r, 'model_dump') else r for r in recipes_raw]
                     summary_result = summary_raw
 
-            # 5. Send final structured result
-            if recipes_result:
+            # 5. Send final result
+            if not is_recipe_flow and conversation_text:
+                yield _sse_event("conversation", {"message": conversation_text})
+                add_message(session_id, "assistant", conversation_text, None)
+
+            elif recipes_result:
                 yield _sse_event("result", {
                     "recipes": recipes_result,
                     "summary": summary_result,
                 })
-                # Save assistant response to DB
-                recipe_summary_text = summary_result
-                if recipes_result:
-                    names = [r.get("name", "") for r in recipes_result]
-                    recipe_summary_text = f"推荐了 {len(recipes_result)} 个菜谱: {', '.join(names)}"
+                names = [r.get("name", "") for r in recipes_result]
+                recipe_summary_text = f"推荐了 {len(recipes_result)} 个菜谱: {', '.join(names)}"
                 add_message(session_id, "assistant", recipe_summary_text, None)
+
             else:
                 yield _sse_event("error", {"message": "未能生成菜谱推荐，请重试"})
                 add_message(session_id, "assistant", "抱歉，我没能成功生成菜谱推荐，请再试一次。", None)

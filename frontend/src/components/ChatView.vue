@@ -17,6 +17,7 @@ const statusMsg = ref('')
 const statusStep = ref('')
 const pendingRecipes = ref([])
 const pendingSummary = ref('')
+const pendingConversation = ref('')
 const messagesEnd = ref(null)
 
 watch(() => props.sessionId, async () => {
@@ -38,7 +39,8 @@ async function handleSend({ text, imageBase64 }) {
   messages.value.push(userMsg)
   isStreaming.value = true
   pendingRecipes.value = []
-  pendingSummary.value = ''
+  pendingSummary.value = []
+  pendingConversation.value = ''
   statusMsg.value = '⏳ 准备中...'
   statusStep.value = 'connecting'
   scrollToBottom()
@@ -60,6 +62,10 @@ async function handleSend({ text, imageBase64 }) {
         pendingRecipes.value = data.recipes || []
         pendingSummary.value = data.summary || ''
         statusStep.value = 'done'
+      } else if (event === 'conversation') {
+        // Conversation mode: plain text response
+        pendingConversation.value = data.message || ''
+        statusStep.value = 'done'
       } else if (event === 'error') {
         messages.value.push({ role: 'assistant', content: `❌ ${data.message}` })
         statusStep.value = 'error'
@@ -69,7 +75,12 @@ async function handleSend({ text, imageBase64 }) {
   } catch (err) {
     messages.value.push({ role: 'assistant', content: `❌ 请求失败: ${err.message}` })
   } finally {
-    if (pendingRecipes.value.length > 0) {
+    if (pendingConversation.value) {
+      messages.value.push({
+        role: 'assistant',
+        content: pendingConversation.value,
+      })
+    } else if (pendingRecipes.value.length > 0) {
       messages.value.push({
         role: 'assistant_recipes',
         recipes: pendingRecipes.value,
@@ -81,6 +92,7 @@ async function handleSend({ text, imageBase64 }) {
     statusStep.value = ''
     pendingRecipes.value = []
     pendingSummary.value = ''
+    pendingConversation.value = ''
 
     const data = await getSession(props.sessionId)
     emit('messages-updated', data.messages || [])
