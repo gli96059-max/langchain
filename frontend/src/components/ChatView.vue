@@ -3,6 +3,7 @@ import { ref, nextTick, watch, computed } from 'vue'
 import { chatStream, readSSE, getSession } from '../api/index.js'
 import RecipeCard from './RecipeCard.vue'
 import ChatInput from './ChatInput.vue'
+import ShoppingList from './ShoppingList.vue'
 
 const props = defineProps({
   sessionId: { type: String, required: true },
@@ -21,6 +22,17 @@ const isStreaming = ref(false)
 const statusMsg = ref('')
 const statusStep = ref('')
 const messagesEnd = ref(null)
+const showShoppingList = ref(false)
+
+const allRecipes = computed(() => {
+  const list = []
+  for (const msg of messages.value) {
+    if (msg.role === 'assistant_recipes' && msg.recipes) {
+      list.push(...msg.recipes)
+    }
+  }
+  return list
+})
 
 watch(() => props.sessionId, async () => {
   const data = await getSession(props.sessionId)
@@ -135,6 +147,22 @@ function scrollToBottom() {
           </div>
         </template>
 
+        <!-- Shopping list button -->
+        <div v-if="allRecipes.length" class="shopping-bar">
+          <button class="shopping-btn" @click="showShoppingList = true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+              <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/>
+            </svg>
+            一键购物清单（{{ allRecipes.length }} 道菜）
+          </button>
+          <ShoppingList
+            :visible="showShoppingList"
+            :recipes="allRecipes"
+            @close="showShoppingList = false"
+          />
+        </div>
+
         <!-- Streaming status -->
         <div v-if="isStreaming" class="message-row assistant-row">
           <div class="assistant-avatar">🍳</div>
@@ -237,6 +265,34 @@ function scrollToBottom() {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.shopping-bar {
+  display: flex;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.shopping-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-sans);
+}
+
+.shopping-btn:hover {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
 }
 
 .summary-text {
