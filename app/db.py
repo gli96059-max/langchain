@@ -50,6 +50,15 @@ def init_db():
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS recipes (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            recipe_data TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
     """)
     conn.commit()
     conn.close()
@@ -138,6 +147,37 @@ def get_messages(session_id: str) -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ── Recipes (library) ────────────────────────────────────────────────
+
+def save_recipe(session_id: str, recipe_data: dict) -> dict:
+    conn = get_connection()
+    rid = uuid.uuid4().hex[:12]
+    now = datetime.now(timezone.utc).isoformat()
+    name = recipe_data.get("name", "")
+    conn.execute(
+        "INSERT INTO recipes (id, session_id, name, recipe_data, created_at) VALUES (?, ?, ?, ?, ?)",
+        (rid, session_id, name, json.dumps(recipe_data, ensure_ascii=False), now),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM recipes WHERE id = ?", (rid,)).fetchone()
+    conn.close()
+    return dict(row)
+
+
+def list_all_recipes() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM recipes ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["recipe_data"] = json.loads(d["recipe_data"])
+        result.append(d)
+    return result
 
 
 # ── Dietary Profile ──────────────────────────────────────────────────

@@ -32,6 +32,12 @@ export function deleteSession(id) {
   return request('DELETE', `/sessions/${id}`)
 }
 
+// ── Recipe Library ────────────────────────────────────────────────
+
+export function listRecipes() {
+  return request('GET', '/recipes')
+}
+
 // ── Dietary Profile ───────────────────────────────────────────────
 
 export function getDietaryProfile() {

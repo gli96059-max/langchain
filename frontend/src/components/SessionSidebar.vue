@@ -9,7 +9,7 @@ const props = defineProps({
   favorites: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['select', 'new-session', 'close-sidebar', 'sessions-updated'])
+const emit = defineEmits(['select', 'new-session', 'close-sidebar', 'sessions-updated', 'show-library'])
 const showFavs = ref(true)
 
 async function handleDelete(sessionId, e) {
@@ -44,6 +44,12 @@ function formatTime(iso) {
           <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
         新对话
+      </button>
+      <button class="library-btn" @click="emit('show-library')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+        </svg>
+        菜谱库
       </button>
     </div>
 
@@ -168,6 +174,31 @@ function formatTime(iso) {
 
 .new-chat-btn:hover {
   background: var(--color-primary-hover);
+}
+
+.library-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px;
+  background: var(--color-card);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-sans);
+  margin-top: 6px;
+}
+
+.library-btn:hover {
+  background: var(--color-bg);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .session-list {

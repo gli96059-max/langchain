@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import SessionSidebar from './components/SessionSidebar.vue'
 import ChatView from './components/ChatView.vue'
 import DietaryProfile from './components/DietaryProfile.vue'
+import RecipeLibrary from './components/RecipeLibrary.vue'
 import { createSession, listSessions, listFavorites, addFavorite, removeFavorite, getDietaryProfile, updateDietaryProfile } from './api/index.js'
 
 const sessions = ref([])
@@ -11,6 +12,7 @@ const sidebarOpen = ref(true)
 const favorites = ref([])
 const showDietary = ref(false)
 const dietaryProfile = ref({ allergies: '', restrictions: '', preferences: '' })
+const viewMode = ref('chat')
 
 async function loadSessions() {
   sessions.value = await listSessions()
@@ -54,6 +56,11 @@ async function handleSaveDietary(profile) {
   showDietary.value = false
 }
 
+function handleShowLibrary() {
+  viewMode.value = 'library'
+  if (window.innerWidth < 768) sidebarOpen.value = false
+}
+
 onMounted(async () => {
   await handleNewSession()
   await loadFavorites()
@@ -72,6 +79,7 @@ onMounted(async () => {
       @new-session="handleNewSession"
       @close-sidebar="sidebarOpen = false"
       @sessions-updated="loadSessions"
+      @show-library="handleShowLibrary"
     />
     <div class="main-area">
       <header class="top-bar">
@@ -97,8 +105,12 @@ onMounted(async () => {
         @close="showDietary = false"
         @save="handleSaveDietary"
       />
+      <RecipeLibrary
+        v-if="viewMode === 'library'"
+        @close="viewMode = 'chat'"
+      />
       <ChatView
-        v-if="activeSessionId"
+        v-else-if="activeSessionId"
         :session-id="activeSessionId"
         :favorites="favorites"
         @message-completed="loadSessions"

@@ -21,6 +21,8 @@ from app.db import (
     list_favorites,
     get_dietary_profile,
     upsert_dietary_profile,
+    save_recipe,
+    list_all_recipes,
 )
 from app.agents.project import build_chief_agent
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -239,6 +241,13 @@ def api_remove_favorite(favorite_id: str):
     return {"ok": True}
 
 
+# ── Recipe library ──────────────────────────────────────────────────
+
+@router.get("/recipes")
+def api_list_recipes():
+    return list_all_recipes()
+
+
 # ── Dietary profile endpoints ────────────────────────────────────────
 
 @router.get("/dietary-profile")
@@ -332,6 +341,9 @@ async def api_chat(session_id: str, req: ChatRequest):
                 enriched = await enrich_recipes_with_images(recipes_data.get("recipes", []))
                 recipes_data["recipes"] = enriched
                 yield _sse_event("result", recipes_data)
+                # Save to recipe library
+                for r in enriched:
+                    save_recipe(session_id, r)
                 summary = recipes_data.get("summary", "")
                 names = [r.get("name", "") for r in recipes_data.get("recipes", [])]
                 db_text = f"推荐了 {len(names)} 个菜谱: {', '.join(names)}"
