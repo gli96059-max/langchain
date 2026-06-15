@@ -3,6 +3,8 @@ import { ref, reactive, onUnmounted } from 'vue'
 import StepReader from './StepReader.vue'
 import { submitRating } from '../api/index.js'
 
+const shareToast = ref('')
+
 const props = defineProps({
   recipe: { type: Object, required: true },
   favorited: { type: Boolean, default: false },
@@ -25,6 +27,33 @@ async function handleSubmitRating() {
     await submitRating(props.recipe.name, props.sessionId, ratingValue.value, ratingComment.value)
     ratingSubmitted.value = true
   } catch { /* ignore */ }
+}
+
+async function handleShare() {
+  const r = props.recipe
+  const lines = [
+    `🍳 ${r.name}`,
+    `难度: ${r.difficulty || '未标注'}`,
+    `综合评分: ${r.overall_score || '-'}`,
+    '',
+    '📝 食材:',
+    ...(r.ingredients || []).map(i => `  • ${i}`),
+    '',
+    '👨‍🍳 做法:',
+    ...(r.steps || []).map((s, i) => `  ${i + 1}. ${s}`),
+  ]
+  if (r.reason) lines.push('', `💡 ${r.reason}`)
+  const text = lines.join('\n')
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: r.name, text })
+    } catch { /* user cancelled */ }
+  } else {
+    await navigator.clipboard.writeText(text)
+    shareToast.value = '已复制到剪贴板'
+    setTimeout(() => { shareToast.value = '' }, 2000)
+  }
 }
 
 function toggleFavorite() {
@@ -248,6 +277,9 @@ onUnmounted(() => {
         <button class="reader-link" @click="showReader = true" v-if="recipe.steps.length > 0">
           📖 阅读模式
         </button>
+        <button class="share-link" @click="handleShare">
+          📤 分享
+        </button>
         <a
           v-if="recipe.reference_url"
           :href="recipe.reference_url"
@@ -259,6 +291,9 @@ onUnmounted(() => {
         </a>
       </div>
     </div>
+
+    <!-- Share toast -->
+    <div v-if="shareToast" class="share-toast">{{ shareToast }}</div>
 
     <StepReader
       :visible="showReader"
@@ -721,6 +756,35 @@ onUnmounted(() => {
 
 .reader-link:hover {
   text-decoration: underline;
+}
+
+.share-link {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  padding: 0;
+}
+
+.share-link:hover {
+  color: var(--color-primary);
+}
+
+.share-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-text);
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 13px;
+  z-index: 3000;
+  animation: fadeIn 0.3s ease;
 }
 
 .reference-link {
