@@ -139,6 +139,41 @@ JSON 格式:
         return None
 
 
+async def enrich_recipes_with_images(recipes: list[dict]) -> list[dict]:
+    """Search for dish images for each recipe via Tavily API."""
+    import httpx
+    import os
+
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key or not recipes:
+        return recipes
+
+    async def search_one(recipe: dict) -> dict:
+        name = recipe.get("name", "")
+        if not name or recipe.get("image_url"):
+            return recipe
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    "https://api.tavily.com/search",
+                    json={
+                        "api_key": api_key,
+                        "query": f"{name} 美食 成品图 菜品",
+                        "include_images": True,
+                        "max_results": 3,
+                    },
+                )
+                data = resp.json()
+                images = data.get("images", [])
+                if images:
+                    recipe["image_url"] = images[0]
+        except Exception:
+            pass
+        return recipe
+
+    return await asyncio.gather(*[search_one(r) for r in recipes])
+
+
 # ── Session endpoints ──────────────────────────────────────────────
 
 @router.post("/sessions", response_model=CreateSessionResponse)
@@ -226,6 +261,9 @@ async def api_chat(session_id: str, req: ChatRequest):
             # Try to extract structured recipe data
             recipes_data = await extract_recipes(assistant_text)
             if recipes_data:
+                # Enrich with dish images
+                enriched = await enrich_recipes_with_images(recipes_data.get("recipes", []))
+                recipes_data["recipes"] = enriched
                 yield _sse_event("result", recipes_data)
                 summary = recipes_data.get("summary", "")
                 names = [r.get("name", "") for r in recipes_data.get("recipes", [])]
