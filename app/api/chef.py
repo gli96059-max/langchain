@@ -25,6 +25,7 @@ from app.db import (
     list_all_recipes,
 )
 from app.agents.project import build_chief_agent
+from app.seasonal import get_seasonal_context
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 import aiosqlite
@@ -293,7 +294,7 @@ async def api_chat(session_id: str, req: ChatRequest):
 
     # Inject dietary profile if set
     profile = get_dietary_profile()
-    dietary_msg = None
+    extra_msgs = []
     if profile and (profile["allergies"] or profile["restrictions"] or profile["preferences"]):
         parts = []
         if profile["allergies"]:
@@ -302,7 +303,11 @@ async def api_chat(session_id: str, req: ChatRequest):
             parts.append(f"饮食限制: {profile['restrictions']}")
         if profile["preferences"]:
             parts.append(f"口味偏好: {profile['preferences']}")
-        dietary_msg = SystemMessage(content=f"## 用户的饮食档案\n{'，'.join(parts)}\n\n推荐菜谱时必须严格遵守以上饮食限制。")
+        extra_msgs.append(SystemMessage(content=f"## 用户的饮食档案\n{'，'.join(parts)}\n\n推荐菜谱时必须严格遵守以上饮食限制。"))
+    # Inject seasonal context
+    seasonal = get_seasonal_context()
+    if seasonal:
+        extra_msgs.append(SystemMessage(content="## " + seasonal))
 
     config = {"configurable": {"thread_id": session_id}}
 
@@ -315,9 +320,7 @@ async def api_chat(session_id: str, req: ChatRequest):
 
         try:
             # Run the agent (sync invoke in thread)
-            msgs = [human_msg]
-            if dietary_msg:
-                msgs.insert(0, dietary_msg)
+            msgs = [*extra_msgs, human_msg]
             response = await asyncio.to_thread(
                 agent.invoke,
                 {"messages": msgs},
