@@ -23,6 +23,8 @@ from app.db import (
     upsert_dietary_profile,
     save_recipe,
     list_all_recipes,
+    add_rating,
+    list_ratings,
 )
 from app.agents.project import build_chief_agent
 from app.seasonal import get_seasonal_context
@@ -67,6 +69,13 @@ class ChatRequest(BaseModel):
 class FavoriteRequest(BaseModel):
     name: str = Field(description="菜谱名称")
     recipe_data: dict = Field(description="完整菜谱数据")
+
+
+class RatingRequest(BaseModel):
+    recipe_name: str = Field(description="菜谱名称")
+    session_id: str = Field(description="会话ID")
+    rating: int = Field(ge=1, le=5, description="评分 1-5")
+    comment: str = Field(default="", description="评价内容")
 
 
 class DietaryProfileRequest(BaseModel):
@@ -246,6 +255,18 @@ def api_add_favorite(req: FavoriteRequest):
 def api_remove_favorite(favorite_id: str):
     remove_favorite(favorite_id)
     return {"ok": True}
+
+
+# ── Ratings ──────────────────────────────────────────────────────────
+
+@router.get("/ratings")
+def api_list_ratings():
+    return list_ratings()
+
+
+@router.post("/ratings")
+def api_add_rating(req: RatingRequest):
+    return add_rating(req.recipe_name, req.session_id, req.rating, req.comment)
 
 
 # ── Recipe library ──────────────────────────────────────────────────

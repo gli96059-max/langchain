@@ -137,6 +137,7 @@ function scrollToBottom() {
                 :key="ri"
                 :recipe="recipe"
                 :favorited="isFavorited(recipe)"
+                :session-id="props.sessionId"
                 @favorite="(r) => emit('favorite', r)"
                 @unfavorite="(r) => emit('unfavorite', r)"
               />

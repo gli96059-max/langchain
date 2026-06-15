@@ -32,6 +32,16 @@ export function deleteSession(id) {
   return request('DELETE', `/sessions/${id}`)
 }
 
+// ── Ratings ───────────────────────────────────────────────────────
+
+export function submitRating(recipeName, sessionId, rating, comment) {
+  return request('POST', '/ratings', { recipe_name: recipeName, session_id: sessionId, rating, comment })
+}
+
+export function listRatings() {
+  return request('GET', '/ratings')
+}
+
 // ── Recipe Library ────────────────────────────────────────────────
 
 export function listRecipes() {

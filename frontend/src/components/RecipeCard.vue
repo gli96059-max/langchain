@@ -1,17 +1,31 @@
 <script setup>
 import { ref, reactive, onUnmounted } from 'vue'
 import StepReader from './StepReader.vue'
+import { submitRating } from '../api/index.js'
 
 const props = defineProps({
   recipe: { type: Object, required: true },
   favorited: { type: Boolean, default: false },
+  sessionId: { type: String, default: null },
 })
 
 const emit = defineEmits(['favorite', 'unfavorite'])
 
 const showSteps = ref(false)
 const showReader = ref(false)
+const showRating = ref(false)
+const ratingValue = ref(0)
+const ratingComment = ref('')
+const ratingSubmitted = ref(false)
 const timers = reactive({})
+
+async function handleSubmitRating() {
+  if (!ratingValue.value || !props.sessionId) return
+  try {
+    await submitRating(props.recipe.name, props.sessionId, ratingValue.value, ratingComment.value)
+    ratingSubmitted.value = true
+  } catch { /* ignore */ }
+}
 
 function toggleFavorite() {
   if (props.favorited) {
@@ -196,6 +210,35 @@ onUnmounted(() => {
       <!-- Reason -->
       <div class="reason-text">
         💬 {{ recipe.reason }}
+      </div>
+
+      <!-- Rating -->
+      <div v-if="!ratingSubmitted" class="rating-section">
+        <button class="rating-toggle" @click="showRating = !showRating">
+          ⭐ 评价这道菜
+        </button>
+        <div v-if="showRating" class="rating-form">
+          <div class="stars-row">
+            <span
+              v-for="s in 5"
+              :key="s"
+              class="star"
+              :class="{ active: s <= ratingValue }"
+              @click="ratingValue = s"
+            >★</span>
+          </div>
+          <textarea
+            v-model="ratingComment"
+            placeholder="说说你的评价（可选）"
+            rows="2"
+          ></textarea>
+          <button class="rating-submit" :disabled="!ratingValue" @click="handleSubmitRating">
+            提交评价
+          </button>
+        </div>
+      </div>
+      <div v-else class="rating-done">
+        ⭐ 已评价（{{ ratingValue }}星）
       </div>
     </div>
 
@@ -547,6 +590,100 @@ onUnmounted(() => {
 @keyframes timerPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.85; }
+}
+
+/* Rating */
+.rating-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.rating-toggle {
+  background: none;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all 0.2s;
+}
+
+.rating-toggle:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.rating-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+}
+
+.stars-row {
+  display: flex;
+  gap: 4px;
+}
+
+.star {
+  font-size: 24px;
+  color: var(--color-border);
+  cursor: pointer;
+  transition: color 0.15s;
+  user-select: none;
+}
+
+.star.active {
+  color: #FFB800;
+}
+
+.star:hover {
+  color: #FFD700;
+}
+
+.rating-form textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-card);
+  resize: none;
+  font-family: var(--font-sans);
+}
+
+.rating-form textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.rating-submit {
+  align-self: flex-end;
+  padding: 6px 16px;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
+
+.rating-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rating-done {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: 6px;
 }
 
 /* Reason */

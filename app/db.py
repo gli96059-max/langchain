@@ -59,6 +59,15 @@ def init_db():
             created_at TEXT NOT NULL,
             FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS ratings (
+            id TEXT PRIMARY KEY,
+            recipe_name TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+            comment TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        );
     """)
     conn.commit()
     conn.close()
@@ -145,6 +154,29 @@ def get_messages(session_id: str) -> list[dict]:
         "SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC",
         (session_id,),
     ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ── Ratings ──────────────────────────────────────────────────────────
+
+def add_rating(recipe_name: str, session_id: str, rating: int, comment: str = "") -> dict:
+    conn = get_connection()
+    rid = uuid.uuid4().hex[:12]
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO ratings (id, recipe_name, session_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (rid, recipe_name, session_id, rating, comment, now),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM ratings WHERE id = ?", (rid,)).fetchone()
+    conn.close()
+    return dict(row)
+
+
+def list_ratings() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM ratings ORDER BY created_at DESC").fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
