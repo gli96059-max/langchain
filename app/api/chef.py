@@ -21,27 +21,37 @@ from app.db import (
 from app.agents.project import build_chef_graph, ChefState
 from app.agents.schemas import Recipe
 
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain_core.messages import HumanMessage, AIMessage
-import sqlite3
+import aiosqlite
 
 router = APIRouter(prefix="/api", tags=["chef"])
 
 # ── Shared LangGraph checkpointer ──────────────────────────────────
 CHECKPOINT_DB = Path(__file__).resolve().parent.parent.parent / "resources" / "checkpoint.db"
-_checkpoint_conn = sqlite3.connect(str(CHECKPOINT_DB), check_same_thread=False)
-_checkpointer = SqliteSaver(_checkpoint_conn)
+CHECKPOINT_DB.parent.mkdir(parents=True, exist_ok=True)
+
+_checkpoint_conn = None
 
 
-_compiled_agent = None
+async def _get_checkpointer():
+    """Return (cached) async checkpointer for the chef graph."""
+    global _checkpoint_conn
+    if _checkpoint_conn is None:
+        _checkpoint_conn = await aiosqlite.connect(str(CHECKPOINT_DB))
+    return AsyncSqliteSaver(_checkpoint_conn)
 
 
-def _get_compiled_agent():
+_compiled_agent_cache = None
+
+
+async def _get_compiled_agent():
     """Return (cached) chef graph compiled with the shared checkpointer."""
-    global _compiled_agent
-    if _compiled_agent is None:
-        _compiled_agent = build_chef_graph(checkpointer=_checkpointer)
-    return _compiled_agent
+    global _compiled_agent_cache
+    if _compiled_agent_cache is None:
+        checkpointer = await _get_checkpointer()
+        _compiled_agent_cache = build_chef_graph(checkpointer=checkpointer)
+    return _compiled_agent_cache
 
 
 # ── Request / Response models ──────────────────────────────────────
@@ -154,7 +164,7 @@ async def api_chat(session_id: str, req: ChatRequest):
 
     # 4. SSE streaming generator
     async def event_stream():
-        agent = _get_compiled_agent()
+        agent = await _get_compiled_agent()
 
         # Send initial status
         yield _sse_event("status", {"step": "identifying", "message": "正在识别食材..."})
