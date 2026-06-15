@@ -39,27 +39,37 @@ async function handleSend({ text, imageBase64 }) {
   try {
     const response = await chatStream(props.sessionId, text, imageBase64)
 
+    let pendingResponse = ''
+    let pendingResult = null
+
     for await (const { event, data } of readSSE(response)) {
       if (event === 'status') {
         statusMsg.value = data.message || ''
         statusStep.value = data.step || ''
       } else if (event === 'response') {
-        // Natural language reply from the agent
-        messages.value.push({ role: 'assistant', content: data.text || '' })
+        pendingResponse = data.text || ''
         statusStep.value = 'response'
       } else if (event === 'result') {
-        // Structured recipe data for cards
-        messages.value.push({
-          role: 'assistant_recipes',
-          recipes: data.recipes || [],
-          summary: data.summary || '',
-        })
+        pendingResult = data
         statusStep.value = 'done'
       } else if (event === 'error') {
         messages.value.push({ role: 'assistant', content: `❌ ${data.message}` })
         statusStep.value = 'error'
       }
       scrollToBottom()
+    }
+
+    // Decide what to show:
+    // - If recipes detected → show cards only (clean & visual)
+    // - If no recipes → show text response
+    if (pendingResult) {
+      messages.value.push({
+        role: 'assistant_recipes',
+        recipes: pendingResult.recipes || [],
+        summary: pendingResult.summary || '',
+      })
+    } else if (pendingResponse) {
+      messages.value.push({ role: 'assistant', content: pendingResponse })
     }
   } catch (err) {
     messages.value.push({ role: 'assistant', content: `❌ 请求失败: ${err.message}` })
