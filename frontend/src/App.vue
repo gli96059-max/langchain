@@ -6,7 +6,6 @@ import { createSession, listSessions, getSession } from './api/index.js'
 
 const sessions = ref([])
 const activeSessionId = ref(null)
-const sessionMessages = ref([])
 const sidebarOpen = ref(true)
 
 async function loadSessions() {
@@ -15,25 +14,20 @@ async function loadSessions() {
 
 async function handleSelectSession(id) {
   activeSessionId.value = id
-  const data = await getSession(id)
-  sessionMessages.value = data.messages || []
   if (window.innerWidth < 768) sidebarOpen.value = false
 }
 
 async function handleNewSession() {
   const data = await createSession()
   sessions.value.unshift(data.session)
-  await handleSelectSession(data.session.id)
-}
-
-function handleMessagesUpdated(messages) {
-  sessionMessages.value = messages
+  activeSessionId.value = data.session.id
+  if (window.innerWidth < 768) sidebarOpen.value = false
 }
 
 onMounted(async () => {
   await loadSessions()
   if (sessions.value.length > 0) {
-    await handleSelectSession(sessions.value[0].id)
+    activeSessionId.value = sessions.value[0].id
   }
 })
 </script>
@@ -61,10 +55,7 @@ onMounted(async () => {
       </header>
       <ChatView
         v-if="activeSessionId"
-        :key="activeSessionId"
         :session-id="activeSessionId"
-        :initial-messages="sessionMessages"
-        @messages-updated="handleMessagesUpdated"
       />
       <div v-else class="empty-state">
         <div class="empty-content">

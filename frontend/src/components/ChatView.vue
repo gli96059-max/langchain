@@ -6,12 +6,9 @@ import ChatInput from './ChatInput.vue'
 
 const props = defineProps({
   sessionId: { type: String, required: true },
-  initialMessages: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['messages-updated'])
-
-const messages = ref([...props.initialMessages])
+const messages = ref([])
 const isStreaming = ref(false)
 const statusMsg = ref('')
 const statusStep = ref('')
@@ -24,7 +21,7 @@ watch(() => props.sessionId, async () => {
   statusStep.value = ''
   await nextTick()
   scrollToBottom()
-})
+}, { immediate: true })
 
 async function handleSend({ text, imageBase64 }) {
   if (!text.trim() && !imageBase64) return
@@ -78,8 +75,6 @@ async function handleSend({ text, imageBase64 }) {
     statusMsg.value = ''
     statusStep.value = ''
 
-    const data = await getSession(props.sessionId)
-    emit('messages-updated', data.messages || [])
     scrollToBottom()
   }
 }
