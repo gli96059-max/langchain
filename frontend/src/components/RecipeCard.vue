@@ -133,6 +133,26 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <!-- Nutrition details -->
+      <div v-if="recipe.nutrition" class="nutrition-row">
+        <div class="nutrition-item">
+          <span class="nutrition-value">{{ recipe.nutrition.calories || '-' }}</span>
+          <span class="nutrition-label">千卡</span>
+        </div>
+        <div class="nutrition-item">
+          <span class="nutrition-value">{{ recipe.nutrition.protein || '-' }}</span>
+          <span class="nutrition-label">蛋白质</span>
+        </div>
+        <div class="nutrition-item">
+          <span class="nutrition-value">{{ recipe.nutrition.fat || '-' }}</span>
+          <span class="nutrition-label">脂肪</span>
+        </div>
+        <div class="nutrition-item">
+          <span class="nutrition-value">{{ recipe.nutrition.carbs || '-' }}</span>
+          <span class="nutrition-label">碳水</span>
+        </div>
+      </div>
+
       <!-- Ingredients -->
       <div class="section">
         <div class="section-title">食材</div>
@@ -340,6 +360,37 @@ onUnmounted(() => {
   width: 1px;
   height: 36px;
   background: var(--color-border);
+}
+
+/* Nutrition details */
+.nutrition-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.nutrition-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.nutrition-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.nutrition-label {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 /* Sections */

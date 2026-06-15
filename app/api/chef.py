@@ -129,6 +129,12 @@ JSON 格式:
       "difficulty": "简单/中等/困难",
       "nutrition_score": 85,
       "overall_score": 90,
+      "nutrition": {{{{
+        "calories": 350,
+        "protein": "20g",
+        "fat": "15g",
+        "carbs": "30g"
+      }}}},
       "reason": "推荐理由",
       "image_url": null,
       "reference_url": null
