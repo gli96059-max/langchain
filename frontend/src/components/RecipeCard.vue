@@ -29,6 +29,53 @@ async function handleSubmitRating() {
   } catch { /* ignore */ }
 }
 
+// ── Visual step enhancement ───────────────────────────────────────
+
+const ACTION_EMOJIS = [
+  ['切|剁|切片|切块|切丁|切丝', '🔪'],
+  ['炒|翻炒|爆炒', '🔥'],
+  ['煎|炸|油煎|油炸', '🍳'],
+  ['煮|焯|汆|烫', '💧'],
+  ['蒸', '♨️'],
+  ['烤|烘|焗', '🔥'],
+  ['炖|焖|煲|卤', '🫕'],
+  ['拌|搅拌|搅匀|混合', '🥢'],
+  ['腌|腌制|入味', '🧂'],
+  ['洗|清洗|冲洗|泡发', '🚿'],
+  ['剥|去壳|去皮', '🫘'],
+  ['调|调味|加', '🧂'],
+  ['倒|加入|放入|下锅', '📥'],
+  ['盛|装盘|出锅', '🍽️'],
+  ['擀|揉|捏|搓', '👐'],
+  ['盖|焖|捂', '🫗'],
+]
+
+function enhanceStep(text) {
+  const parts = { text, heat: null, time: null, action: null }
+
+  // Extract heat level
+  const heatMatch = text.match(/([小中大])火/)
+  if (heatMatch) {
+    parts.heat = heatMatch[1]
+  }
+
+  // Extract time
+  const timeMatch = text.match(/(\d+)\s*[分钟分秒]/)
+  if (timeMatch) {
+    parts.time = timeMatch[0]
+  }
+
+  // Detect action emoji
+  for (const [pattern, emoji] of ACTION_EMOJIS) {
+    if (new RegExp(pattern).test(text)) {
+      parts.action = emoji
+      break
+    }
+  }
+
+  return parts
+}
+
 async function handleShare() {
   const r = props.recipe
   const lines = [
@@ -214,9 +261,19 @@ onUnmounted(() => {
         </button>
         <div v-if="showSteps && recipe.steps?.length" class="steps-list">
           <div v-for="(step, i) in recipe.steps" :key="i" class="step-item">
-            <span class="step-num">{{ i + 1 }}</span>
+            <span class="step-num">{{ enhanceStep(step).action || '' }}{{ i + 1 }}</span>
             <div class="step-content">
-              <span class="step-text">{{ step }}</span>
+              <div class="step-text-wrap">
+                <span class="step-text">{{ step }}</span>
+                <div class="step-badges">
+                  <span v-if="enhanceStep(step).heat" class="heat-badge" :class="enhanceStep(step).heat">
+                    🔥 {{ enhanceStep(step).heat }}火
+                  </span>
+                  <span v-if="enhanceStep(step).time" class="time-badge">
+                    ⏱ {{ enhanceStep(step).time }}
+                  </span>
+                </div>
+              </div>
               <div v-if="parseMinutes(step)" class="step-timer">
                 <button
                   v-if="!timers[i]"
@@ -540,12 +597,12 @@ onUnmounted(() => {
 
 .step-num {
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: var(--color-primary-light);
   color: var(--color-primary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -560,8 +617,55 @@ onUnmounted(() => {
   gap: 8px;
 }
 
+.step-text-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .step-text {
   color: var(--color-text);
+  line-height: 1.6;
+}
+
+.step-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.heat-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.heat-badge.小 {
+  background: #FFF3E0;
+  color: #E65100;
+}
+
+.heat-badge.中 {
+  background: #FFF3E0;
+  color: #E65100;
+}
+
+.heat-badge.大 {
+  background: #FFEBEE;
+  color: #C62828;
+}
+
+.time-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .step-timer {

@@ -12,6 +12,29 @@ const currentStep = ref(0)
 const steps = computed(() => props.recipe?.steps || [])
 const totalSteps = computed(() => steps.value.length)
 
+const ACTION_EMOJIS = [
+  ['切|剁|切片|切块|切丁|切丝', '🔪'],
+  ['炒|翻炒|爆炒', '🔥'],
+  ['煎|炸|油煎|油炸', '🍳'],
+  ['煮|焯|汆|烫', '💧'],
+  ['蒸', '♨️'],
+  ['烤|烘|焗', '🔥'],
+  ['炖|焖|煲|卤', '🫕'],
+  ['拌|搅拌|搅匀|混合', '🥢'],
+]
+
+function enhanceStep(text) {
+  const parts = { text, heat: null, time: null, action: null }
+  const heatMatch = text.match(/([小中大])火/)
+  if (heatMatch) parts.heat = heatMatch[1]
+  const timeMatch = text.match(/(\d+)\s*[分钟分秒]/)
+  if (timeMatch) parts.time = timeMatch[0]
+  for (const [pattern, emoji] of ACTION_EMOJIS) {
+    if (new RegExp(pattern).test(text)) { parts.action = emoji; break }
+  }
+  return parts
+}
+
 function next() {
   if (currentStep.value < totalSteps.value - 1) currentStep.value++
 }
@@ -37,7 +60,17 @@ function close() {
 
       <div class="reader-body" @click="next">
         <div class="step-display">
-          <div class="step-number">步骤 {{ currentStep + 1 }}</div>
+          <div class="step-number">
+            {{ enhanceStep(steps[currentStep]).action || '' }} 步骤 {{ currentStep + 1 }}
+          </div>
+          <div class="reader-badges">
+            <span v-if="enhanceStep(steps[currentStep]).heat" class="reader-heat" :class="enhanceStep(steps[currentStep]).heat">
+              🔥 {{ enhanceStep(steps[currentStep]).heat }}火
+            </span>
+            <span v-if="enhanceStep(steps[currentStep]).time" class="reader-time">
+              ⏱ {{ enhanceStep(steps[currentStep]).time }}
+            </span>
+          </div>
           <div class="step-content">{{ steps[currentStep] }}</div>
         </div>
       </div>
@@ -135,9 +168,47 @@ function close() {
   font-size: 14px;
   font-weight: 600;
   color: var(--color-primary);
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   text-transform: uppercase;
   letter-spacing: 2px;
+}
+
+.reader-badges {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.reader-heat {
+  font-size: 13px;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+.reader-heat.小 {
+  background: #FFF3E0;
+  color: #E65100;
+}
+
+.reader-heat.中 {
+  background: #FFF3E0;
+  color: #E65100;
+}
+
+.reader-heat.大 {
+  background: #FFEBEE;
+  color: #C62828;
+}
+
+.reader-time {
+  font-size: 13px;
+  padding: 4px 14px;
+  border-radius: 20px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: 500;
 }
 
 .step-content {
