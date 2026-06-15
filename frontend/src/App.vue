@@ -2,12 +2,15 @@
 import { ref, onMounted } from 'vue'
 import SessionSidebar from './components/SessionSidebar.vue'
 import ChatView from './components/ChatView.vue'
-import { createSession, listSessions, listFavorites, addFavorite, removeFavorite } from './api/index.js'
+import DietaryProfile from './components/DietaryProfile.vue'
+import { createSession, listSessions, listFavorites, addFavorite, removeFavorite, getDietaryProfile, updateDietaryProfile } from './api/index.js'
 
 const sessions = ref([])
 const activeSessionId = ref(null)
 const sidebarOpen = ref(true)
 const favorites = ref([])
+const showDietary = ref(false)
+const dietaryProfile = ref({ allergies: '', restrictions: '', preferences: '' })
 
 async function loadSessions() {
   sessions.value = await listSessions()
@@ -42,9 +45,19 @@ async function handleUnfavorite(recipe) {
   }
 }
 
+async function loadDietaryProfile() {
+  dietaryProfile.value = await getDietaryProfile()
+}
+
+async function handleSaveDietary(profile) {
+  dietaryProfile.value = await updateDietaryProfile(profile.allergies, profile.restrictions, profile.preferences)
+  showDietary.value = false
+}
+
 onMounted(async () => {
   await handleNewSession()
   await loadFavorites()
+  await loadDietaryProfile()
 })
 </script>
 
@@ -62,14 +75,28 @@ onMounted(async () => {
     />
     <div class="main-area">
       <header class="top-bar">
-        <button class="menu-btn" @click="sidebarOpen = !sidebarOpen">
-          <span></span><span></span><span></span>
-        </button>
-        <div class="brand" v-if="activeSessionId">
-          <span class="brand-icon">🍳</span>
-          <span class="brand-text">AI 私厨助手</span>
+        <div class="top-bar-left">
+          <button class="menu-btn" @click="sidebarOpen = !sidebarOpen">
+            <span></span><span></span><span></span>
+          </button>
+          <div class="brand" v-if="activeSessionId">
+            <span class="brand-icon">🍳</span>
+            <span class="brand-text">AI 私厨助手</span>
+          </div>
         </div>
+        <button v-if="activeSessionId" class="diet-btn" @click="showDietary = true" title="饮食档案">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+          </svg>
+        </button>
       </header>
+      <DietaryProfile
+        :visible="showDietary"
+        :profile="dietaryProfile"
+        @close="showDietary = false"
+        @save="handleSaveDietary"
+      />
       <ChatView
         v-if="activeSessionId"
         :session-id="activeSessionId"
@@ -107,11 +134,17 @@ onMounted(async () => {
 .top-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
   padding: 12px 20px;
   background: var(--color-card);
   border-bottom: 1px solid var(--color-border);
   z-index: 10;
+}
+
+.top-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .menu-btn {
@@ -130,6 +163,24 @@ onMounted(async () => {
   height: 2px;
   background: var(--color-text);
   border-radius: 2px;
+}
+
+.diet-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.diet-btn:hover {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
 }
 
 .brand {

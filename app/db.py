@@ -41,6 +41,15 @@ def init_db():
             recipe_data TEXT NOT NULL,
             created_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS dietary_profile (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            allergies TEXT NOT NULL DEFAULT '',
+            restrictions TEXT NOT NULL DEFAULT '',
+            preferences TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
     """)
     conn.commit()
     conn.close()
@@ -129,6 +138,35 @@ def get_messages(session_id: str) -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ── Dietary Profile ──────────────────────────────────────────────────
+
+def get_dietary_profile() -> dict | None:
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM dietary_profile WHERE id = 1").fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def upsert_dietary_profile(allergies: str, restrictions: str, preferences: str) -> dict:
+    conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+    existing = conn.execute("SELECT * FROM dietary_profile WHERE id = 1").fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE dietary_profile SET allergies = ?, restrictions = ?, preferences = ?, updated_at = ? WHERE id = 1",
+            (allergies, restrictions, preferences, now),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO dietary_profile (id, allergies, restrictions, preferences, created_at, updated_at) VALUES (1, ?, ?, ?, ?, ?)",
+            (allergies, restrictions, preferences, now, now),
+        )
+    conn.commit()
+    row = conn.execute("SELECT * FROM dietary_profile WHERE id = 1").fetchone()
+    conn.close()
+    return dict(row)
 
 
 # ── Favorites ─────────────────────────────────────────────────────────

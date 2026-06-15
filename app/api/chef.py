@@ -19,10 +19,12 @@ from app.db import (
     add_favorite,
     remove_favorite,
     list_favorites,
+    get_dietary_profile,
+    upsert_dietary_profile,
 )
 from app.agents.project import build_chief_agent
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 import aiosqlite
 
 router = APIRouter(prefix="/api", tags=["chef"])
@@ -62,6 +64,12 @@ class ChatRequest(BaseModel):
 class FavoriteRequest(BaseModel):
     name: str = Field(description="菜谱名称")
     recipe_data: dict = Field(description="完整菜谱数据")
+
+
+class DietaryProfileRequest(BaseModel):
+    allergies: str = Field(default="", description="过敏源")
+    restrictions: str = Field(default="", description="饮食限制")
+    preferences: str = Field(default="", description="口味偏好")
 
 
 class SessionResponse(BaseModel):
@@ -231,6 +239,22 @@ def api_remove_favorite(favorite_id: str):
     return {"ok": True}
 
 
+# ── Dietary profile endpoints ────────────────────────────────────────
+
+@router.get("/dietary-profile")
+def api_get_dietary_profile():
+    profile = get_dietary_profile()
+    if not profile:
+        return {"allergies": "", "restrictions": "", "preferences": ""}
+    return profile
+
+
+@router.put("/dietary-profile")
+def api_update_dietary_profile(req: DietaryProfileRequest):
+    profile = upsert_dietary_profile(req.allergies, req.restrictions, req.preferences)
+    return profile
+
+
 # ── Chat endpoint ─────────────────────────────────────────────────
 
 @router.post("/chat/{session_id}")
@@ -258,6 +282,19 @@ async def api_chat(session_id: str, req: ChatRequest):
     if len(existing) == 1:
         update_session_title(session_id, _auto_title(req.message))
 
+    # Inject dietary profile if set
+    profile = get_dietary_profile()
+    dietary_msg = None
+    if profile and (profile["allergies"] or profile["restrictions"] or profile["preferences"]):
+        parts = []
+        if profile["allergies"]:
+            parts.append(f"过敏源: {profile['allergies']}")
+        if profile["restrictions"]:
+            parts.append(f"饮食限制: {profile['restrictions']}")
+        if profile["preferences"]:
+            parts.append(f"口味偏好: {profile['preferences']}")
+        dietary_msg = SystemMessage(content=f"## 用户的饮食档案\n{'，'.join(parts)}\n\n推荐菜谱时必须严格遵守以上饮食限制。")
+
     config = {"configurable": {"thread_id": session_id}}
 
     async def event_stream():
@@ -269,9 +306,12 @@ async def api_chat(session_id: str, req: ChatRequest):
 
         try:
             # Run the agent (sync invoke in thread)
+            msgs = [human_msg]
+            if dietary_msg:
+                msgs.insert(0, dietary_msg)
             response = await asyncio.to_thread(
                 agent.invoke,
-                {"messages": [human_msg]},
+                {"messages": msgs},
                 config,
             )
 

@@ -32,6 +32,16 @@ export function deleteSession(id) {
   return request('DELETE', `/sessions/${id}`)
 }
 
+// ── Dietary Profile ───────────────────────────────────────────────
+
+export function getDietaryProfile() {
+  return request('GET', '/dietary-profile')
+}
+
+export function updateDietaryProfile(allergies, restrictions, preferences) {
+  return request('PUT', '/dietary-profile', { allergies, restrictions, preferences })
+}
+
 // ── Favorites ─────────────────────────────────────────────────────
 
 export function listFavorites() {
