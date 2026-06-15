@@ -1,0 +1,8 @@
+.env
+uploads/*
+!uploads/.gitkeep
+__pycache__/
+*.pyc
+node_modules/
+dist/
+.vite/
