@@ -1,7 +1,7 @@
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from model_config import qwen
-from tools import web_search
+from tools import web_search, web_search_images
 
 SYSTEM_PROMPT = """你是AI私厨助手「小厨」。
 
@@ -21,6 +21,14 @@ SYSTEM_PROMPT = """你是AI私厨助手「小厨」。
 - 推荐菜谱时自然描述即可，包含菜名、食材、做法、难度和推荐理由
 - 如果搜索结果中有菜品图片或参考链接，分享给用户
 - 回复要自然流畅，像朋友聊天一样
+
+## 搜索策略
+- 用户给定食材后，分别搜索不同难度的菜谱，确保推荐覆盖「简单/中等/困难」三个档次
+- 先用 web_search 搜索某个难度档次的菜谱，再用 web_search 搜索另一个难度档次的菜谱，以此类推
+- 每个档次至少推荐 1-2 道菜，总共推荐 3-6 道菜
+- 推荐时标明每道菜的难度等级，让用户自己选择
+- 如果搜索结果中包含菜品图片 URL，务必在推荐时提供给用户
+- 如果搜索结果中没有图片，使用 web_search_images 工具专门搜索该菜的成品图片
 
 ## 多轮精调
 - 用户可能会针对之前推荐的菜谱提出修改要求，例如：「少放点糖」、「换成鸡肉」、「把步骤简化」、「加辣」、「不要油炸」等
@@ -71,7 +79,7 @@ SYSTEM_PROMPT = """你是AI私厨助手「小厨」。
 def build_chief_agent(checkpointer=None):
     return create_agent(
         model=qwen,
-        tools=[web_search],
+        tools=[web_search, web_search_images],
         system_prompt=SYSTEM_PROMPT,
         checkpointer=checkpointer,
     )

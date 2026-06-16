@@ -125,7 +125,7 @@ def _extract_assistant_text(response) -> str:
 
 async def extract_recipes(text: str) -> dict | None:
     """Use Qwen to extract structured recipe data from the agent's natural response."""
-    prompt = f"""从以下回复中提取菜谱推荐信息。如果包含菜谱推荐，按下面的 JSON 格式输出。
+    prompt = f"""从以下回复中提取菜谱推荐信息。回复中可能包含多个不同难度的菜谱，全部提取出来。
 如果完全不包含菜谱推荐（比如只是打招呼、闲聊、回答问题），只输出: {{"has_recipes": false}}
 
 JSON 格式:
@@ -174,7 +174,7 @@ JSON 格式:
 
 
 async def enrich_recipes_with_images(recipes: list[dict]) -> list[dict]:
-    """Search for dish images for each recipe via Tavily API."""
+    """Search for dish images for each recipe with multiple fallback strategies."""
     import httpx
     import os
 
@@ -182,30 +182,42 @@ async def enrich_recipes_with_images(recipes: list[dict]) -> list[dict]:
     if not api_key or not recipes:
         return recipes
 
+    # Multiple query strategies to maximize chance of finding an image
+    QUERIES = [
+        "{name} 成品图 美食",
+        "{name} 做法 菜品图片",
+        "{name} 菜谱",
+        "{name} recipe food",
+    ]
+
     async def search_one(recipe: dict) -> dict:
         name = recipe.get("name", "")
         if not name or recipe.get("image_url"):
             return recipe
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(
-                    "https://api.tavily.com/search",
-                    json={
-                        "api_key": api_key,
-                        "query": f"{name} 美食 成品图 菜品",
-                        "include_images": True,
-                        "max_results": 3,
-                    },
-                )
-                data = resp.json()
-                images = data.get("images", [])
-                if images:
-                    recipe["image_url"] = images[0]
+            async with httpx.AsyncClient(timeout=8) as client:
+                for q in QUERIES:
+                    query = q.format(name=name)
+                    resp = await client.post(
+                        "https://api.tavily.com/search",
+                        json={
+                            "api_key": api_key,
+                            "query": query,
+                            "include_images": True,
+                            "max_results": 5,
+                        },
+                    )
+                    data = resp.json()
+                    images = data.get("images", [])
+                    if images:
+                        recipe["image_url"] = images[0]
+                        return recipe
         except Exception:
             pass
         return recipe
 
-    return await asyncio.gather(*[search_one(r) for r in recipes])
+    results = await asyncio.gather(*[search_one(r) for r in recipes])
+    return results
 
 
 # ── Session endpoints ──────────────────────────────────────────────

@@ -27,7 +27,7 @@ def get_weather(location: str, units: Literal['celsius', 'fahrenheit'] = "celsiu
 
 
 tavily = TavilySearch(
-    max_results=5,
+    max_results=8,
     topic="general",
     include_images=True,
 )
@@ -39,3 +39,17 @@ def web_search(query: str):
     用来搜索菜谱和相关信息的工具
     """
     return tavily.invoke(query)
+
+
+@tool
+def web_search_images(query: str):
+    """
+    专门搜索菜品成品图片的工具。当推荐的菜谱缺少成品图片时，用这个工具补图。
+    输入菜名或菜品关键词，返回带图片链接的搜索结果。
+    """
+    img_tavily = TavilySearch(
+        max_results=5,
+        topic="general",
+        include_images=True,
+    )
+    return img_tavily.invoke(query)
