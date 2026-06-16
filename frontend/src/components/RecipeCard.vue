@@ -583,6 +583,7 @@ onUnmounted(() => {
   border-radius: var(--radius-lg);
   overflow: hidden;
   transition: box-shadow 0.2s;
+  flex-shrink: 0;
 }
 
 .recipe-card:hover {

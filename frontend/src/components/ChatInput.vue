@@ -12,6 +12,33 @@ const imageBase64 = ref(null)
 const imagePreview = ref(null)
 const fileInput = ref(null)
 
+const MAX_DIM = 1024
+
+function resizeImage(file) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      let { width, height } = img
+      if (width > MAX_DIM || height > MAX_DIM) {
+        if (width > height) {
+          height = Math.round((height / width) * MAX_DIM)
+          width = MAX_DIM
+        } else {
+          width = Math.round((width / height) * MAX_DIM)
+          height = MAX_DIM
+        }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, width, height)
+      resolve(canvas.toDataURL('image/jpeg', 0.85))
+    }
+    img.src = URL.createObjectURL(file)
+  })
+}
+
 function handleFileSelect(e) {
   const file = e.target.files?.[0]
   if (!file) return
@@ -19,13 +46,10 @@ function handleFileSelect(e) {
     alert('请选择图片文件')
     return
   }
-  const reader = new FileReader()
-  reader.onload = () => {
-    const result = reader.result
-    imageBase64.value = result.split(',')[1] || result
-    imagePreview.value = result
-  }
-  reader.readAsDataURL(file)
+  resizeImage(file).then(dataUrl => {
+    imageBase64.value = dataUrl.split(',')[1] || dataUrl
+    imagePreview.value = dataUrl
+  })
   e.target.value = ''
 }
 

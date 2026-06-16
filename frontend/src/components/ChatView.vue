@@ -47,7 +47,11 @@ async function handleSend({ text, imageBase64 }) {
   if (!text.trim() && !imageBase64) return
   if (isStreaming.value) return
 
-  messages.value.push({ role: 'user', content: text, image_url: null })
+  messages.value.push({
+    role: 'user',
+    content: text,
+    image_url: imageBase64 ? `data:image/png;base64,${imageBase64}` : null,
+  })
   isStreaming.value = true
   statusMsg.value = '⏳ 思考中...'
   statusStep.value = 'thinking'
@@ -115,8 +119,9 @@ function scrollToBottom() {
           <!-- User message -->
           <div v-if="msg.role === 'user'" class="message-row user-row">
             <div class="message-bubble user-bubble">
-              <p>{{ msg.content }}</p>
-              <span v-if="msg.image_url" class="img-badge">📷 已上传图片</span>
+              <img v-if="msg.image_url" :src="msg.image_url" class="user-image" />
+              <p v-if="msg.content">{{ msg.content }}</p>
+              <span v-if="msg.image_url && !msg.content" class="img-badge">📷 食材图片已上传</span>
             </div>
           </div>
 
@@ -252,6 +257,18 @@ function scrollToBottom() {
   background: var(--color-card);
   border: 1px solid var(--color-border);
   border-bottom-left-radius: 4px;
+}
+
+.user-image {
+  display: block;
+  max-width: 240px;
+  max-height: 180px;
+  width: auto;
+  height: auto;
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  object-fit: contain;
+  background: rgba(0,0,0,0.05);
 }
 
 .img-badge {

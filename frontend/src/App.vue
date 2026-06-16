@@ -62,6 +62,7 @@ function handleShowLibrary() {
 }
 
 onMounted(async () => {
+  await loadSessions()
   await handleNewSession()
   await loadFavorites()
   await loadDietaryProfile()
@@ -141,6 +142,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .top-bar {
