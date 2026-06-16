@@ -27,7 +27,7 @@ def get_weather(location: str, units: Literal['celsius', 'fahrenheit'] = "celsiu
 
 
 tavily = TavilySearch(
-    max_results=8,
+    max_results=3,
     topic="general",
     include_images=True,
 )
