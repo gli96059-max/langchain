@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   disabled: { type: Boolean, default: false },
@@ -13,6 +13,17 @@ const imagePreview = ref(null)
 const fileInput = ref(null)
 
 const MAX_DIM = 1024
+
+const isMobile = ref(false)
+function checkMobile() {
+  isMobile.value = window.innerWidth < 768
+}
+
+onMounted(() => {
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+})
+onUnmounted(() => window.removeEventListener('resize', checkMobile))
 
 function resizeImage(file) {
   return new Promise((resolve) => {
@@ -254,5 +265,31 @@ function handleKeydown(e) {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+  .chat-input-area {
+    padding: 10px 10px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+  .input-row {
+    padding: 6px 6px 6px 10px;
+    gap: 6px;
+  }
+  .action-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .action-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+  .text-input {
+    font-size: 16px;
+    padding: 6px 0;
+  }
+  .image-preview img {
+    height: 64px;
+  }
 }
 </style>

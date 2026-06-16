@@ -225,6 +225,26 @@ function close() {
   .reader-body {
     padding: 24px 20px;
   }
+  .reader-footer {
+    padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .reader-header {
+    padding: 12px 16px;
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  }
+  .reader-nav-btn {
+    padding: 12px 20px;
+    min-width: 72px;
+    font-size: 15px;
+  }
+  .reader-dot {
+    width: 10px;
+    height: 10px;
+  }
+  .reader-dot.active {
+    width: 28px;
+  }
 }
 
 .reader-footer {

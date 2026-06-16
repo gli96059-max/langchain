@@ -1,33 +1,23 @@
 <script setup>
 import { ref, reactive, nextTick, onUnmounted } from 'vue'
 import StepReader from './StepReader.vue'
-import { submitRating } from '../api/index.js'
+import { saveRecipe } from '../api/index.js'
 
 const props = defineProps({
   recipe: { type: Object, required: true },
-  favorited: { type: Boolean, default: false },
+  showSave: { type: Boolean, default: false },
+  saved: { type: Boolean, default: false },
+  showDelete: { type: Boolean, default: false },
   sessionId: { type: String, default: null },
 })
 
-const emit = defineEmits(['favorite', 'unfavorite'])
+const emit = defineEmits(['save', 'saved-change', 'delete'])
 
 const showSteps = ref(false)
 const showReader = ref(false)
-const showRating = ref(false)
-const ratingValue = ref(0)
-const ratingComment = ref('')
-const ratingSubmitted = ref(false)
 const showShareCard = ref(false)
 const shareCanvasRef = ref(null)
 const timers = reactive({})
-
-async function handleSubmitRating() {
-  if (!ratingValue.value || !props.sessionId) return
-  try {
-    await submitRating(props.recipe.name, props.sessionId, ratingValue.value, ratingComment.value)
-    ratingSubmitted.value = true
-  } catch { /* ignore */ }
-}
 
 // ── Visual step enhancement ───────────────────────────────────────
 
@@ -301,12 +291,16 @@ function downloadShareCard() {
   link.click()
 }
 
-function toggleFavorite() {
-  if (props.favorited) {
-    emit('unfavorite', props.recipe)
-  } else {
-    emit('favorite', props.recipe)
-  }
+const saving = ref(false)
+
+async function saveToLibrary() {
+  if (saving.value || props.saved) return
+  saving.value = true
+  try {
+    await saveRecipe(props.sessionId, props.recipe)
+    emit('save', props.recipe)
+  } catch { /* ignore */ }
+  saving.value = false
 }
 
 function difficultyLabel(d) {
@@ -381,9 +375,27 @@ onUnmounted(() => {
       <div class="card-title-row">
         <h3 class="recipe-name">{{ recipe.name }}</h3>
         <div class="card-actions">
-          <button class="fav-btn" :class="{ active: favorited }" @click="toggleFavorite" title="收藏菜谱">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" :fill="favorited ? '#E8734A' : 'none'" :stroke="favorited ? '#E8734A' : '#999'" stroke-width="2"/>
+          <button
+            v-if="showSave"
+            class="save-btn"
+            :class="{ saved }"
+            :disabled="saving"
+            @click="saveToLibrary"
+            :title="saved ? '已保存' : '加入菜谱库'"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2v16z"/>
+            </svg>
+            {{ saved ? '已保存' : '保存' }}
+          </button>
+          <button
+            v-if="showDelete"
+            class="card-delete-btn"
+            @click.stop="emit('delete', recipe)"
+            title="删除"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M2 4h10M5 4V2.5A.5.5 0 015.5 2h3a.5.5 0 01.5.5V4M11 4v7.5a1 1 0 01-1 1H4a1 1 0 01-1-1V4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
           <span class="difficulty-badge" :class="difficultyClass(recipe.difficulty)">
@@ -496,34 +508,6 @@ onUnmounted(() => {
         💬 {{ recipe.reason }}
       </div>
 
-      <!-- Rating -->
-      <div v-if="!ratingSubmitted" class="rating-section">
-        <button class="rating-toggle" @click="showRating = !showRating">
-          ⭐ 评价这道菜
-        </button>
-        <div v-if="showRating" class="rating-form">
-          <div class="stars-row">
-            <span
-              v-for="s in 5"
-              :key="s"
-              class="star"
-              :class="{ active: s <= ratingValue }"
-              @click="ratingValue = s"
-            >★</span>
-          </div>
-          <textarea
-            v-model="ratingComment"
-            placeholder="说说你的评价（可选）"
-            rows="2"
-          ></textarea>
-          <button class="rating-submit" :disabled="!ratingValue" @click="handleSubmitRating">
-            提交评价
-          </button>
-        </div>
-      </div>
-      <div v-else class="rating-done">
-        ⭐ 已评价（{{ ratingValue }}星）
-      </div>
     </div>
 
     <!-- Links -->
@@ -614,24 +598,56 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-.fav-btn {
-  background: none;
-  border: none;
+.save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  padding: 4px;
-  border-radius: 50%;
-  display: flex;
+  font-family: var(--font-sans);
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.save-btn:hover {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.save-btn.saved {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: #fff;
+}
+
+.save-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.card-delete-btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  cursor: pointer;
+  color: var(--color-text-muted);
   transition: all 0.2s;
+  flex-shrink: 0;
 }
-
-.fav-btn:hover {
-  background: rgba(232, 115, 74, 0.1);
-}
-
-.fav-btn.active:hover {
-  background: rgba(232, 115, 74, 0.15);
+.card-delete-btn:hover {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
 }
 
 .difficulty-badge {
@@ -948,100 +964,6 @@ onUnmounted(() => {
   50% { opacity: 0.85; }
 }
 
-/* Rating */
-.rating-section {
-  display: flex;
-  flex-direction: column;
-}
-
-.rating-toggle {
-  background: none;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 8px;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font-family: var(--font-sans);
-  transition: all 0.2s;
-}
-
-.rating-toggle:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.rating-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 12px;
-  background: var(--color-bg);
-  border-radius: var(--radius-sm);
-}
-
-.stars-row {
-  display: flex;
-  gap: 4px;
-}
-
-.star {
-  font-size: 24px;
-  color: var(--color-border);
-  cursor: pointer;
-  transition: color 0.15s;
-  user-select: none;
-}
-
-.star.active {
-  color: #FFB800;
-}
-
-.star:hover {
-  color: #FFD700;
-}
-
-.rating-form textarea {
-  padding: 8px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  color: var(--color-text);
-  background: var(--color-card);
-  resize: none;
-  font-family: var(--font-sans);
-}
-
-.rating-form textarea:focus {
-  outline: none;
-  border-color: var(--color-primary);
-}
-
-.rating-submit {
-  align-self: flex-end;
-  padding: 6px 16px;
-  background: var(--color-primary);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  cursor: pointer;
-  font-family: var(--font-sans);
-}
-
-.rating-submit:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.rating-done {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  text-align: center;
-  padding: 6px;
-}
-
 /* Reason */
 .reason-text {
   font-size: 14px;
@@ -1211,5 +1133,83 @@ onUnmounted(() => {
 
 .reference-link:hover {
   text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .recipe-card {
+    border-radius: var(--radius-md);
+  }
+  .card-header {
+    padding: 12px 14px 0;
+  }
+  .card-body {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+  .recipe-name {
+    font-size: 16px;
+  }
+  .recipe-image {
+    height: 140px;
+  }
+  .score-value {
+    font-size: 20px;
+  }
+  .nutrition-item {
+    min-width: 0;
+  }
+  .nutrition-value {
+    font-size: 14px;
+  }
+  .ingredient-tag {
+    font-size: 12px;
+    padding: 3px 8px;
+  }
+  .step-num {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+  }
+  .step-content {
+    font-size: 13px;
+  }
+  .timer-start-btn, .timer-display {
+    font-size: 11px;
+    padding: 4px 10px;
+  }
+  .footer-links {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .card-footer {
+    padding: 0 14px 12px;
+  }
+  .star {
+    font-size: 28px;
+  }
+
+  /* Share card: bottom-sheet on mobile */
+  .share-modal {
+    width: 100vw;
+    max-width: 100vw;
+    max-height: 90vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+  .share-canvas-wrap {
+    padding: 10px;
+  }
+  .share-canvas-wrap canvas {
+    max-width: 100%;
+    height: auto;
+  }
+  .share-download-btn {
+    width: 100%;
+    text-align: center;
+  }
+
+  /* Share card slides up from bottom */
+  .share-overlay {
+    align-items: flex-end;
+  }
 }
 </style>

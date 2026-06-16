@@ -7,15 +7,8 @@ import ShoppingList from './ShoppingList.vue'
 
 const props = defineProps({
   sessionId: { type: String, required: true },
-  favorites: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['message-completed', 'favorite', 'unfavorite'])
-
-const favoriteNames = computed(() => new Set(props.favorites.map(f => f.recipe_data?.name)))
-
-function isFavorited(recipe) {
-  return favoriteNames.value.has(recipe.name)
-}
+const emit = defineEmits(['message-completed'])
 
 const messages = ref([])
 const isStreaming = ref(false)
@@ -23,6 +16,7 @@ const statusMsg = ref('')
 const statusStep = ref('')
 const messagesEnd = ref(null)
 const showShoppingList = ref(false)
+const savedRecipeNames = ref(new Set())
 
 const allRecipes = computed(() => {
   const list = []
@@ -36,7 +30,15 @@ const allRecipes = computed(() => {
 
 watch(() => props.sessionId, async () => {
   const data = await getSession(props.sessionId)
-  messages.value = data.messages || []
+  messages.value = (data.messages || []).map(m => {
+    if (m.role === 'assistant_recipes') {
+      try {
+        const parsed = JSON.parse(m.content)
+        return { role: 'assistant_recipes', recipes: parsed.recipes || [], summary: parsed.summary || '' }
+      } catch { return m }
+    }
+    return m
+  })
   statusMsg.value = ''
   statusStep.value = ''
   await nextTick()
@@ -104,6 +106,16 @@ async function handleSend({ text, imageBase64 }) {
   }
 }
 
+function handleRecipeSave(recipe) {
+  savedRecipeNames.value.add(recipe.name)
+  // Force reactivity
+  savedRecipeNames.value = new Set(savedRecipeNames.value)
+}
+
+function isSaved(recipe) {
+  return savedRecipeNames.value.has(recipe.name)
+}
+
 function scrollToBottom() {
   nextTick(() => {
     messagesEnd.value?.scrollIntoView({ behavior: 'smooth' })
@@ -141,10 +153,10 @@ function scrollToBottom() {
                 v-for="(recipe, ri) in msg.recipes"
                 :key="ri"
                 :recipe="recipe"
-                :favorited="isFavorited(recipe)"
+                :show-save="true"
+                :saved="isSaved(recipe)"
                 :session-id="props.sessionId"
-                @favorite="(r) => emit('favorite', r)"
-                @unfavorite="(r) => emit('unfavorite', r)"
+                @save="handleRecipeSave"
               />
               <div v-if="msg.summary" class="summary-text">
                 <strong>💡 总结：</strong>{{ msg.summary }}
@@ -365,11 +377,40 @@ function scrollToBottom() {
 
 @media (max-width: 768px) {
   .messages-container {
-    padding: 0 12px;
+    padding: 0 10px;
+    gap: 12px;
   }
   .message-bubble {
-    max-width: 90%;
+    max-width: 92%;
     font-size: 14px;
+    padding: 10px 14px;
+  }
+  .messages-area {
+    padding: 12px 0;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .assistant-avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 15px;
+  }
+  .user-image {
+    max-width: 180px;
+    max-height: 140px;
+  }
+  .shopping-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+  .summary-text {
+    font-size: 13px;
+    padding: 12px 14px;
+  }
+  .status-indicator {
+    font-size: 13px;
+    padding: 8px 12px;
   }
 }
 </style>

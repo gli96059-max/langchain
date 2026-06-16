@@ -16,15 +16,19 @@ from app.db import (
     update_session_title,
     add_message,
     get_messages,
-    add_favorite,
-    remove_favorite,
-    list_favorites,
     get_dietary_profile,
     upsert_dietary_profile,
     save_recipe,
     list_all_recipes,
-    add_rating,
-    list_ratings,
+    delete_recipe,
+    batch_delete_recipes,
+    save_shopping_list,
+    list_shopping_lists,
+    get_shopping_list,
+    update_shopping_list_items,
+    delete_shopping_list,
+    cleanup_empty_sessions,
+    batch_delete_sessions,
 )
 from app.agents.project import build_chief_agent
 from app.seasonal import get_seasonal_context
@@ -66,16 +70,14 @@ class ChatRequest(BaseModel):
     image_base64: str | None = Field(default=None, description="图片的base64编码")
 
 
-class FavoriteRequest(BaseModel):
+class SaveRecipeRequest(BaseModel):
     name: str = Field(description="菜谱名称")
+    session_id: str = Field(description="来源会话ID")
     recipe_data: dict = Field(description="完整菜谱数据")
 
 
-class RatingRequest(BaseModel):
-    recipe_name: str = Field(description="菜谱名称")
-    session_id: str = Field(description="会话ID")
-    rating: int = Field(ge=1, le=5, description="评分 1-5")
-    comment: str = Field(default="", description="评价内容")
+class BatchDeleteRecipesRequest(BaseModel):
+    ids: list[str] = Field(description="要删除的菜谱ID列表")
 
 
 class DietaryProfileRequest(BaseModel):
@@ -136,6 +138,8 @@ JSON 格式:
       "ingredients": ["食材1", "食材2"],
       "steps": ["步骤1", "步骤2"],
       "difficulty": "简单/中等/困难",
+      "cuisine_type": "中餐/西餐/日料/韩餐/东南亚/其他",
+      "taste": "清淡/麻辣/酸甜/咸鲜/甜/辣",
       "nutrition_score": 85,
       "overall_score": 90,
       "nutrition": {{{{
@@ -228,9 +232,9 @@ def api_create_session():
     return CreateSessionResponse(session=SessionResponse(**session))
 
 
-@router.get("/sessions", response_model=list[SessionResponse])
+@router.get("/sessions")
 def api_list_sessions():
-    return [SessionResponse(**s) for s in list_sessions()]
+    return list_sessions()
 
 
 @router.get("/sessions/{session_id}", response_model=dict)
@@ -242,6 +246,14 @@ def api_get_session(session_id: str):
     return {"session": SessionResponse(**session), "messages": messages}
 
 
+@router.put("/sessions/{session_id}")
+def api_rename_session(session_id: str, req: ChatRequest):
+    if not session_id or not req.message:
+        raise HTTPException(status_code=400, detail="Title is required")
+    update_session_title(session_id, req.message.strip()[:50])
+    return {"ok": True}
+
+
 @router.delete("/sessions/{session_id}")
 def api_delete_session(session_id: str):
     if not get_session(session_id):
@@ -250,42 +262,101 @@ def api_delete_session(session_id: str):
     return {"ok": True}
 
 
-# ── Favorites endpoints ──────────────────────────────────────────────
-
-@router.get("/favorites")
-def api_list_favorites():
-    return list_favorites()
+class BatchDeleteRequest(BaseModel):
+    ids: list[str] = Field(description="要删除的会话ID列表")
 
 
-@router.post("/favorites")
-def api_add_favorite(req: FavoriteRequest):
-    fav = add_favorite(req.name, req.recipe_data)
-    return fav
-
-
-@router.delete("/favorites/{favorite_id}")
-def api_remove_favorite(favorite_id: str):
-    remove_favorite(favorite_id)
+@router.post("/sessions/batch-delete")
+def api_batch_delete_sessions(req: BatchDeleteRequest):
+    if not req.ids:
+        return {"ok": True}
+    batch_delete_sessions(req.ids)
     return {"ok": True}
 
 
-# ── Ratings ──────────────────────────────────────────────────────────
-
-@router.get("/ratings")
-def api_list_ratings():
-    return list_ratings()
-
-
-@router.post("/ratings")
-def api_add_rating(req: RatingRequest):
-    return add_rating(req.recipe_name, req.session_id, req.rating, req.comment)
+@router.delete("/sessions/cleanup")
+def api_cleanup_sessions():
+    cleanup_empty_sessions()
+    return {"ok": True}
 
 
 # ── Recipe library ──────────────────────────────────────────────────
 
 @router.get("/recipes")
-def api_list_recipes():
-    return list_all_recipes()
+def api_list_recipes(
+    search: str | None = None,
+    difficulty: str | None = None,
+    ingredient: str | None = None,
+    cuisine_type: str | None = None,
+    taste: str | None = None,
+):
+    return list_all_recipes(
+        search_text=search,
+        difficulty=difficulty,
+        ingredient=ingredient,
+        cuisine_type=cuisine_type,
+        taste=taste,
+    )
+
+
+@router.delete("/recipes/{recipe_id}")
+def api_delete_recipe(recipe_id: str):
+    deleted = delete_recipe(recipe_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    return {"ok": True}
+
+
+@router.post("/recipes/batch-delete")
+def api_batch_delete_recipes(req: BatchDeleteRecipesRequest):
+    if not req.ids:
+        return {"ok": True}
+    batch_delete_recipes(req.ids)
+    return {"ok": True}
+
+
+# ── Shopping list endpoints ───────────────────────────────────────────
+
+class ShoppingListSaveRequest(BaseModel):
+    name: str = Field(description="清单名称")
+    session_id: str = Field(default="", description="关联会话ID")
+    items: list[dict] = Field(description="食材项目列表 [{text, category, checked, source_recipe}]")
+
+
+class ShoppingListItemsRequest(BaseModel):
+    items: list[dict] = Field(description="更新后的食材项目列表")
+
+
+@router.post("/shopping-lists")
+def api_save_shopping_list(req: ShoppingListSaveRequest):
+    return save_shopping_list(req.name, req.session_id, req.items)
+
+
+@router.get("/shopping-lists")
+def api_list_shopping_lists():
+    return list_shopping_lists()
+
+
+@router.get("/shopping-lists/{list_id}")
+def api_get_shopping_list(list_id: str):
+    lst = get_shopping_list(list_id)
+    if not lst:
+        raise HTTPException(status_code=404, detail="Shopping list not found")
+    return lst
+
+
+@router.put("/shopping-lists/{list_id}")
+def api_update_shopping_list(list_id: str, req: ShoppingListItemsRequest):
+    lst = update_shopping_list_items(list_id, req.items)
+    if not lst:
+        raise HTTPException(status_code=404, detail="Shopping list not found")
+    return lst
+
+
+@router.delete("/shopping-lists/{list_id}")
+def api_delete_shopping_list(list_id: str):
+    delete_shopping_list(list_id)
+    return {"ok": True}
 
 
 # ── Dietary profile endpoints ────────────────────────────────────────
@@ -302,6 +373,14 @@ def api_get_dietary_profile():
 def api_update_dietary_profile(req: DietaryProfileRequest):
     profile = upsert_dietary_profile(req.allergies, req.restrictions, req.preferences)
     return profile
+
+
+# ── Manual recipe save ────────────────────────────────────────────────
+
+@router.post("/recipes")
+def api_save_recipe(req: SaveRecipeRequest):
+    r = save_recipe(req.session_id, req.recipe_data)
+    return {"ok": True, "recipe": r}
 
 
 # ── Chat endpoint ─────────────────────────────────────────────────
@@ -383,13 +462,8 @@ async def api_chat(session_id: str, req: ChatRequest):
                 enriched = await enrich_recipes_with_images(recipes_data.get("recipes", []))
                 recipes_data["recipes"] = enriched
                 yield _sse_event("result", recipes_data)
-                # Save to recipe library
-                for r in enriched:
-                    save_recipe(session_id, r)
-                summary = recipes_data.get("summary", "")
-                names = [r.get("name", "") for r in recipes_data.get("recipes", [])]
-                db_text = f"推荐了 {len(names)} 个菜谱: {', '.join(names)}"
-                add_message(session_id, "assistant", db_text, None)
+                # Persist full recipe data so cards survive session reload
+                add_message(session_id, "assistant_recipes", json.dumps(recipes_data, ensure_ascii=False), None)
             else:
                 add_message(session_id, "assistant", assistant_text, None)
 

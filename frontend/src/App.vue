@@ -4,22 +4,24 @@ import SessionSidebar from './components/SessionSidebar.vue'
 import ChatView from './components/ChatView.vue'
 import DietaryProfile from './components/DietaryProfile.vue'
 import RecipeLibrary from './components/RecipeLibrary.vue'
-import { createSession, listSessions, listFavorites, addFavorite, removeFavorite, getDietaryProfile, updateDietaryProfile } from './api/index.js'
+import ShoppingListPage from './components/ShoppingListPage.vue'
+import { createSession, listSessions, getDietaryProfile, updateDietaryProfile, getSession } from './api/index.js'
 
 const sessions = ref([])
 const activeSessionId = ref(null)
 const sidebarOpen = ref(true)
-const favorites = ref([])
 const showDietary = ref(false)
 const dietaryProfile = ref({ allergies: '', restrictions: '', preferences: '' })
 const viewMode = ref('chat')
 
 async function loadSessions() {
-  sessions.value = await listSessions()
-}
-
-async function loadFavorites() {
-  favorites.value = await listFavorites()
+  const all = await listSessions()
+  // Only show sessions that have messages
+  sessions.value = all.filter(s => s.msg_count > 0)
+  // If the active session no longer exists, clear it
+  if (activeSessionId.value && !sessions.value.some(s => s.id === activeSessionId.value)) {
+    activeSessionId.value = null
+  }
 }
 
 async function handleSelectSession(id) {
@@ -28,23 +30,20 @@ async function handleSelectSession(id) {
 }
 
 async function handleNewSession() {
-  const data = await createSession()
-  sessions.value.unshift(data.session)
-  activeSessionId.value = data.session.id
-  if (window.innerWidth < 768) sidebarOpen.value = false
-}
-
-async function handleFavorite(recipe) {
-  await addFavorite(recipe.name, recipe)
-  await loadFavorites()
-}
-
-async function handleUnfavorite(recipe) {
-  const fav = favorites.value.find(f => f.recipe_data?.name === recipe.name)
-  if (fav) {
-    await removeFavorite(fav.id)
-    await loadFavorites()
+  // If current session exists and has no messages, don't create another
+  if (activeSessionId.value) {
+    try {
+      const data = await getSession(activeSessionId.value)
+      if (data.messages && data.messages.length === 0) {
+        if (window.innerWidth < 768) sidebarOpen.value = false
+        return
+      }
+    } catch { /* session invalid, proceed to create new */ }
   }
+  const data = await createSession()
+  activeSessionId.value = data.session.id
+  // Don't add to sessions list — empty sessions are filtered out by the backend
+  if (window.innerWidth < 768) sidebarOpen.value = false
 }
 
 async function loadDietaryProfile() {
@@ -61,11 +60,15 @@ function handleShowLibrary() {
   if (window.innerWidth < 768) sidebarOpen.value = false
 }
 
+function handleShowShoppingLists() {
+  viewMode.value = 'shopping-lists'
+  if (window.innerWidth < 768) sidebarOpen.value = false
+}
+
 onMounted(async () => {
   await loadSessions()
-  await handleNewSession()
-  await loadFavorites()
   await loadDietaryProfile()
+  // No auto-create: welcome screen displayed when no active session
 })
 </script>
 
@@ -75,12 +78,12 @@ onMounted(async () => {
       :sessions="sessions"
       :active-id="activeSessionId"
       :open="sidebarOpen"
-      :favorites="favorites"
       @select="handleSelectSession"
       @new-session="handleNewSession"
       @close-sidebar="sidebarOpen = false"
       @sessions-updated="loadSessions"
       @show-library="handleShowLibrary"
+      @show-shopping-lists="handleShowShoppingLists"
     />
     <div class="main-area">
       <header class="top-bar">
@@ -110,13 +113,14 @@ onMounted(async () => {
         v-if="viewMode === 'library'"
         @close="viewMode = 'chat'"
       />
+      <ShoppingListPage
+        v-else-if="viewMode === 'shopping-lists'"
+        @close="viewMode = 'chat'"
+      />
       <ChatView
         v-else-if="activeSessionId"
         :session-id="activeSessionId"
-        :favorites="favorites"
         @message-completed="loadSessions"
-        @favorite="handleFavorite"
-        @unfavorite="handleUnfavorite"
       />
       <div v-else class="empty-state">
         <div class="empty-content">

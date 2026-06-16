@@ -32,20 +32,59 @@ export function deleteSession(id) {
   return request('DELETE', `/sessions/${id}`)
 }
 
-// ── Ratings ───────────────────────────────────────────────────────
-
-export function submitRating(recipeName, sessionId, rating, comment) {
-  return request('POST', '/ratings', { recipe_name: recipeName, session_id: sessionId, rating, comment })
+export function updateSessionTitle(id, title) {
+  return request('PUT', `/sessions/${id}`, { message: title })
 }
 
-export function listRatings() {
-  return request('GET', '/ratings')
+export function batchDeleteSessions(ids) {
+  return request('POST', '/sessions/batch-delete', { ids })
+}
+
+export function cleanupEmptySessions() {
+  return request('DELETE', '/sessions/cleanup')
 }
 
 // ── Recipe Library ────────────────────────────────────────────────
 
-export function listRecipes() {
-  return request('GET', '/recipes')
+export function listRecipes(params = {}) {
+  const qs = new URLSearchParams()
+  if (params.search) qs.set('search', params.search)
+  if (params.difficulty) qs.set('difficulty', params.difficulty)
+  if (params.ingredient) qs.set('ingredient', params.ingredient)
+  if (params.cuisine_type) qs.set('cuisine_type', params.cuisine_type)
+  if (params.taste) qs.set('taste', params.taste)
+  const query = qs.toString()
+  return request('GET', `/recipes${query ? '?' + query : ''}`)
+}
+
+export function deleteRecipe(id) {
+  return request('DELETE', `/recipes/${id}`)
+}
+
+export function batchDeleteRecipes(ids) {
+  return request('POST', '/recipes/batch-delete', { ids })
+}
+
+// ── Shopping Lists ─────────────────────────────────────
+
+export function listShoppingLists() {
+  return request('GET', '/shopping-lists')
+}
+
+export function getShoppingList(id) {
+  return request('GET', `/shopping-lists/${id}`)
+}
+
+export function saveShoppingList(name, sessionId, items) {
+  return request('POST', '/shopping-lists', { name, session_id: sessionId, items })
+}
+
+export function updateShoppingList(id, items) {
+  return request('PUT', `/shopping-lists/${id}`, { items })
+}
+
+export function deleteShoppingList(id) {
+  return request('DELETE', `/shopping-lists/${id}`)
 }
 
 // ── Dietary Profile ───────────────────────────────────────────────
@@ -58,18 +97,10 @@ export function updateDietaryProfile(allergies, restrictions, preferences) {
   return request('PUT', '/dietary-profile', { allergies, restrictions, preferences })
 }
 
-// ── Favorites ─────────────────────────────────────────────────────
+// ── Recipe library save ───────────────────────────────────────────
 
-export function listFavorites() {
-  return request('GET', '/favorites')
-}
-
-export function addFavorite(name, recipeData) {
-  return request('POST', '/favorites', { name, recipe_data: recipeData })
-}
-
-export function removeFavorite(id) {
-  return request('DELETE', `/favorites/${id}`)
+export function saveRecipe(sessionId, recipeData) {
+  return request('POST', '/recipes', { name: recipeData.name || '', session_id: sessionId, recipe_data: recipeData })
 }
 
 // ── Image upload ──────────────────────────────────────────────────

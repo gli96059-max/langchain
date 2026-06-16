@@ -190,7 +190,36 @@ function save() {
   font-family: var(--font-sans);
 }
 
-.btn-save:hover {
-  background: var(--color-primary-hover);
+@media (max-width: 768px) {
+  .modal-panel {
+    width: 100vw;
+    max-width: 100vw;
+    max-height: 90vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    margin-top: auto;
+  }
+  .modal-overlay {
+    align-items: flex-end;
+  }
+  .modal-header {
+    padding: 16px 18px;
+  }
+  .modal-body {
+    padding: 16px 18px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+  .modal-footer {
+    padding: 12px 18px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .field-group textarea {
+    font-size: 16px;
+    padding: 12px;
+  }
+  .btn-cancel, .btn-save {
+    flex: 1;
+    text-align: center;
+    padding: 12px 16px;
+  }
 }
 </style>

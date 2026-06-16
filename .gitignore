@@ -8,3 +8,8 @@ dist/
 .vite/
 .idea/
 .claude/
+resources/*.db
+resources/*.db-shm
+resources/*.db-wal
+resources/*.db.tmp
+resources/test_recipes.json
