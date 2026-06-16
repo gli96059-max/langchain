@@ -81,13 +81,34 @@ function handleShare() {
   nextTick(() => drawShareCard())
 }
 
-function drawShareCard() {
+async function drawShareCard() {
   const canvas = shareCanvasRef.value
   if (!canvas) return
   const r = props.recipe
   const ctx = canvas.getContext('2d')
   const W = 600
-  const H = 800
+  const colLeft = 40
+  const maxW = W - 80
+
+  // Load image first if available
+  let img = null
+  if (r.image_url) {
+    try {
+      img = await new Promise((resolve, reject) => {
+        const i = new Image()
+        i.crossOrigin = 'anonymous'
+        i.onload = () => resolve(i)
+        i.onerror = () => resolve(null)
+        i.src = r.image_url
+      })
+    } catch { img = null }
+  }
+
+  const hasImg = !!img
+  const headerH = 80
+  const imgH = hasImg ? 200 : 0
+  const bodyTop = headerH + imgH + 16
+  const H = Math.max(800, bodyTop + 400)
   canvas.width = W
   canvas.height = H
 
@@ -97,31 +118,59 @@ function drawShareCard() {
 
   // Orange header bar
   ctx.fillStyle = '#E8734A'
-  ctx.fillRect(0, 0, W, 100)
+  ctx.fillRect(0, 0, W, headerH)
 
   // Header text
   ctx.fillStyle = '#fff'
-  ctx.font = 'bold 28px "Microsoft YaHei", sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillText(`🍳 ${r.name || '菜谱推荐'}`, W / 2, 48)
+  ctx.font = 'bold 26px "Microsoft YaHei", sans-serif'
+  ctx.fillText(`🍳 ${r.name || '菜谱推荐'}`, W / 2, 36)
 
-  ctx.font = '14px "Microsoft YaHei", sans-serif'
+  ctx.font = '13px "Microsoft YaHei", sans-serif'
   ctx.fillStyle = 'rgba(255,255,255,0.9)'
   const diff = r.difficulty || '未标注'
   const score = r.overall_score || '-'
-  ctx.fillText(`难度: ${diff}    综合评分: ${score}`, W / 2, 78)
+  ctx.fillText(`难度: ${diff}    综合评分: ${score}`, W / 2, 64)
+
+  // ── Recipe image ──
+  if (hasImg) {
+    const imgW = W - 80
+    const imgX = 40
+    const imgY = headerH + 12
+    // Soft shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.06)'
+    ctx.beginPath()
+    ctx.ellipse(W / 2, imgY + imgH - 10, imgW / 2 + 4, 12, 0, 0, Math.PI * 2)
+    ctx.fill()
+    // Clip to rounded rect
+    ctx.save()
+    ctx.beginPath()
+    // Manual rounded rect for compatibility
+    const r = 12
+    ctx.moveTo(imgX + r, imgY)
+    ctx.lineTo(imgX + imgW - r, imgY)
+    ctx.quadraticCurveTo(imgX + imgW, imgY, imgX + imgW, imgY + r)
+    ctx.lineTo(imgX + imgW, imgY + imgH - r)
+    ctx.quadraticCurveTo(imgX + imgW, imgY + imgH, imgX + imgW - r, imgY + imgH)
+    ctx.lineTo(imgX + r, imgY + imgH)
+    ctx.quadraticCurveTo(imgX, imgY + imgH, imgX, imgY + imgH - r)
+    ctx.lineTo(imgX, imgY + r)
+    ctx.quadraticCurveTo(imgX, imgY, imgX + r, imgY)
+    ctx.closePath()
+    ctx.clip()
+    ctx.drawImage(img, imgX, imgY, imgW, imgH)
+    ctx.restore()
+  }
 
   // Body
-  let y = 128
-  const colLeft = 40
-  const maxW = W - 80
+  let y = bodyTop
   ctx.textAlign = 'left'
 
   // ── Ingredients ──
   ctx.fillStyle = '#E8734A'
   ctx.font = 'bold 16px "Microsoft YaHei", sans-serif'
   ctx.fillText('📝 食材清单', colLeft, y)
-  y += 28
+  y += 26
 
   ctx.font = '14px "Microsoft YaHei", sans-serif'
   ctx.fillStyle = '#333'
@@ -129,21 +178,16 @@ function drawShareCard() {
     const ings = r.ingredients.slice(0, 10)
     for (const ing of ings) {
       ctx.fillText(`• ${ing}`, colLeft + 12, y)
-      y += 22
+      y += 21
     }
   }
-  y += 8
+  y += 6
 
   // ── Steps ──
-  if (y > 560) {
-    // If too many ingredients, start new "page" concept not feasible on single canvas
-    // Just compress
-  }
-
   ctx.fillStyle = '#E8734A'
   ctx.font = 'bold 16px "Microsoft YaHei", sans-serif'
   ctx.fillText('👨‍🍳 做法步骤', colLeft, y)
-  y += 28
+  y += 26
 
   ctx.font = '13px "Microsoft YaHei", sans-serif'
   ctx.fillStyle = '#444'
@@ -151,12 +195,10 @@ function drawShareCard() {
     const displaySteps = r.steps.slice(0, 6)
     for (let i = 0; i < displaySteps.length; i++) {
       const label = `${i + 1}. `
-      const text = displaySteps[i]
       ctx.fillText(label, colLeft, y)
-      // Wrap long text
       let line = ''
       let x = colLeft + ctx.measureText(label).width
-      for (const ch of text) {
+      for (const ch of displaySteps[i]) {
         const test = line + ch
         if (ctx.measureText(test).width > maxW - (x - colLeft)) {
           ctx.fillText(line, x, y)
@@ -171,21 +213,21 @@ function drawShareCard() {
       y += 22
     }
   }
-  y += 6
+  y += 4
 
   // ── Reason ──
   if (r.reason) {
+    const rh = 32
     ctx.fillStyle = '#FFF0E8'
-    // reason background box
-    ctx.fillRect(colLeft - 8, y - 4, maxW + 16, 36)
+    ctx.fillRect(colLeft - 8, y - 4, maxW + 16, rh)
     ctx.fillStyle = '#666'
     ctx.font = '12px "Microsoft YaHei", sans-serif'
     wrapText(ctx, `💡 ${r.reason}`, colLeft, y + 14, maxW, 18)
-    y += 50
+    y += rh + 10
   }
 
   // ── Footer ──
-  if (y < H - 30) y = H - 30
+  if (y < H - 24) y = H - 24
   ctx.fillStyle = '#CCC'
   ctx.font = '11px "Microsoft YaHei", sans-serif'
   ctx.textAlign = 'center'
