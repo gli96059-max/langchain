@@ -407,7 +407,7 @@ async function doSave() {
 .ing-item.checked .ing-text { text-decoration: line-through; }
 
 .ing-check { font-size: 16px; color: var(--color-text-muted); flex-shrink: 0; }
-.ing-check { color: var(--color-primary); }
+.ing-item.checked .ing-check { color: var(--color-primary); }
 
 .ing-text { flex: 1; font-size: 14px; color: var(--color-text); }
 

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref } from 'vue'
 
 const props = defineProps({
   disabled: { type: Boolean, default: false },
@@ -11,19 +11,16 @@ const text = ref('')
 const imageBase64 = ref(null)
 const imagePreview = ref(null)
 const fileInput = ref(null)
+const textareaRef = ref(null)
 
 const MAX_DIM = 1024
 
-const isMobile = ref(false)
-function checkMobile() {
-  isMobile.value = window.innerWidth < 768
+function autoResize() {
+  const el = textareaRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = el.scrollHeight + 'px'
 }
-
-onMounted(() => {
-  checkMobile()
-  window.addEventListener('resize', checkMobile)
-})
-onUnmounted(() => window.removeEventListener('resize', checkMobile))
 
 function resizeImage(file) {
   return new Promise((resolve) => {
@@ -117,13 +114,14 @@ function handleKeydown(e) {
         />
 
         <textarea
+          ref="textareaRef"
           v-model="text"
           :placeholder="imagePreview ? '描述一下食材...' : '输入食材清单或上传食材照片...'"
           :disabled="disabled"
           class="text-input"
           rows="1"
           @keydown="handleKeydown"
-          @input="$el?.style && ($el.style.height = 'auto')"
+          @input="autoResize"
         ></textarea>
 
         <button

@@ -130,17 +130,6 @@ def delete_session(session_id: str):
     conn.close()
 
 
-def cleanup_empty_sessions():
-    conn = get_connection()
-    conn.execute("""
-        DELETE FROM sessions WHERE id NOT IN (
-            SELECT DISTINCT session_id FROM messages
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-
 def batch_delete_sessions(ids: list[str]):
     conn = get_connection()
     conn.execute("PRAGMA foreign_keys = ON")
@@ -251,8 +240,8 @@ def list_all_recipes(
 
 def delete_recipe(recipe_id: str) -> bool:
     conn = get_connection()
-    conn.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
-    affected = conn.total_changes
+    cursor = conn.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
+    affected = cursor.rowcount
     conn.commit()
     conn.close()
     return affected > 0

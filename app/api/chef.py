@@ -27,7 +27,6 @@ from app.db import (
     get_shopping_list,
     update_shopping_list_items,
     delete_shopping_list,
-    cleanup_empty_sessions,
     batch_delete_sessions,
 )
 from app.agents.project import build_chief_agent
@@ -127,6 +126,9 @@ def _extract_assistant_text(response) -> str:
 
 async def extract_recipes(text: str) -> dict | None:
     """Use Qwen to extract structured recipe data from the agent's natural response."""
+    # Fast skip: short responses or ones without recipe keywords don't need Qwen
+    if len(text) < 50 or not any(kw in text for kw in ['菜谱', '做法', '步骤', '食材', '推荐', '难度', '火候', '分钟']):
+        return None
     prompt = f"""从以下回复中提取菜谱推荐信息。回复中可能包含多个不同难度的菜谱，全部提取出来。
 如果完全不包含菜谱推荐（比如只是打招呼、闲聊、回答问题），只输出: {{"has_recipes": false}}
 
@@ -273,11 +275,6 @@ def api_batch_delete_sessions(req: BatchDeleteRequest):
     batch_delete_sessions(req.ids)
     return {"ok": True}
 
-
-@router.delete("/sessions/cleanup")
-def api_cleanup_sessions():
-    cleanup_empty_sessions()
-    return {"ok": True}
 
 
 # ── Recipe library ──────────────────────────────────────────────────

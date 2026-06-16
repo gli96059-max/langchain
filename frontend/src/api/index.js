@@ -40,10 +40,6 @@ export function batchDeleteSessions(ids) {
   return request('POST', '/sessions/batch-delete', { ids })
 }
 
-export function cleanupEmptySessions() {
-  return request('DELETE', '/sessions/cleanup')
-}
-
 // ── Recipe Library ────────────────────────────────────────────────
 
 export function listRecipes(params = {}) {
