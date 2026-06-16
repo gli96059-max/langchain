@@ -94,7 +94,7 @@ async function drawShareCard() {
   let img = null
   if (r.image_url) {
     try {
-      img = await new Promise((resolve, reject) => {
+      img = await new Promise((resolve) => {
         const i = new Image()
         i.crossOrigin = 'anonymous'
         i.onload = () => resolve(i)
@@ -105,10 +105,10 @@ async function drawShareCard() {
   }
 
   const hasImg = !!img
-  const headerH = 80
-  const imgH = hasImg ? 200 : 0
-  const bodyTop = headerH + imgH + 16
-  const H = Math.max(800, bodyTop + 400)
+  const headerH = 100
+  const imgH = hasImg ? 220 : 0
+  const bodyTop = headerH + imgH + (hasImg ? 30 : 16)
+  const H = Math.max(900, bodyTop + 500)
   canvas.width = W
   canvas.height = H
 
@@ -117,49 +117,45 @@ async function drawShareCard() {
   ctx.fillRect(0, 0, W, H)
 
   // Orange header bar
-  ctx.fillStyle = '#E8734A'
+  const grad = ctx.createLinearGradient(0, 0, W, 0)
+  grad.addColorStop(0, '#E8734A')
+  grad.addColorStop(1, '#D0603A')
+  ctx.fillStyle = grad
   ctx.fillRect(0, 0, W, headerH)
 
   // Header text
-  ctx.fillStyle = '#fff'
   ctx.textAlign = 'center'
-  ctx.font = 'bold 26px "Microsoft YaHei", sans-serif'
-  ctx.fillText(`🍳 ${r.name || '菜谱推荐'}`, W / 2, 36)
+  ctx.fillStyle = '#fff'
+  ctx.font = 'bold 30px "Microsoft YaHei", "PingFang SC", sans-serif'
+  fillWrapped(ctx, `🍳 ${r.name || '菜谱推荐'}`, W / 2, 48, W - 80, 40)
 
-  ctx.font = '13px "Microsoft YaHei", sans-serif'
-  ctx.fillStyle = 'rgba(255,255,255,0.9)'
+  ctx.font = '15px "Microsoft YaHei", "PingFang SC", sans-serif'
+  ctx.fillStyle = 'rgba(255,255,255,0.92)'
   const diff = r.difficulty || '未标注'
   const score = r.overall_score || '-'
-  ctx.fillText(`难度: ${diff}    综合评分: ${score}`, W / 2, 64)
+  ctx.fillText(`难度: ${diff}    综合评分: ${score}`, W / 2, 82)
 
   // ── Recipe image ──
   if (hasImg) {
     const imgW = W - 80
     const imgX = 40
-    const imgY = headerH + 12
-    // Soft shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.06)'
+    const imgY = headerH + 16
+    // Shadow below image
+    ctx.fillStyle = 'rgba(0,0,0,0.08)'
     ctx.beginPath()
-    ctx.ellipse(W / 2, imgY + imgH - 10, imgW / 2 + 4, 12, 0, 0, Math.PI * 2)
+    ctx.ellipse(W / 2, imgY + imgH + 4, imgW / 2 - 10, 8, 0, 0, Math.PI * 2)
     ctx.fill()
-    // Clip to rounded rect
+    // Draw image with rounded corners
     ctx.save()
-    ctx.beginPath()
-    // Manual rounded rect for compatibility
-    const r = 12
-    ctx.moveTo(imgX + r, imgY)
-    ctx.lineTo(imgX + imgW - r, imgY)
-    ctx.quadraticCurveTo(imgX + imgW, imgY, imgX + imgW, imgY + r)
-    ctx.lineTo(imgX + imgW, imgY + imgH - r)
-    ctx.quadraticCurveTo(imgX + imgW, imgY + imgH, imgX + imgW - r, imgY + imgH)
-    ctx.lineTo(imgX + r, imgY + imgH)
-    ctx.quadraticCurveTo(imgX, imgY + imgH, imgX, imgY + imgH - r)
-    ctx.lineTo(imgX, imgY + r)
-    ctx.quadraticCurveTo(imgX, imgY, imgX + r, imgY)
-    ctx.closePath()
+    roundRectPath(ctx, imgX, imgY, imgW, imgH, 14)
     ctx.clip()
     ctx.drawImage(img, imgX, imgY, imgW, imgH)
     ctx.restore()
+    // Thin border
+    ctx.strokeStyle = 'rgba(0,0,0,0.06)'
+    ctx.lineWidth = 1
+    roundRectPath(ctx, imgX, imgY, imgW, imgH, 14)
+    ctx.stroke()
   }
 
   // Body
@@ -168,70 +164,115 @@ async function drawShareCard() {
 
   // ── Ingredients ──
   ctx.fillStyle = '#E8734A'
-  ctx.font = 'bold 16px "Microsoft YaHei", sans-serif'
+  ctx.font = 'bold 19px "Microsoft YaHei", "PingFang SC", sans-serif'
   ctx.fillText('📝 食材清单', colLeft, y)
-  y += 26
+  y += 30
 
-  ctx.font = '14px "Microsoft YaHei", sans-serif'
+  ctx.font = '16px "Microsoft YaHei", "PingFang SC", sans-serif'
   ctx.fillStyle = '#333'
   if (r.ingredients && r.ingredients.length) {
-    const ings = r.ingredients.slice(0, 10)
-    for (const ing of ings) {
+    for (const ing of r.ingredients.slice(0, 10)) {
       ctx.fillText(`• ${ing}`, colLeft + 12, y)
-      y += 21
+      y += 25
+    }
+  }
+  y += 10
+
+  // ── Steps ──
+  ctx.fillStyle = '#E8734A'
+  ctx.font = 'bold 19px "Microsoft YaHei", "PingFang SC", sans-serif'
+  ctx.fillText('👨‍🍳 做法步骤', colLeft, y)
+  y += 30
+
+  ctx.font = '15px "Microsoft YaHei", "PingFang SC", sans-serif'
+  ctx.fillStyle = '#444'
+  if (r.steps && r.steps.length) {
+    for (let i = 0; i < Math.min(r.steps.length, 6); i++) {
+      const label = `${i + 1}.  `
+      ctx.fillStyle = '#E8734A'
+      ctx.font = 'bold 15px "Microsoft YaHei", "PingFang SC", sans-serif'
+      ctx.fillText(label, colLeft, y)
+      ctx.fillStyle = '#444'
+      ctx.font = '15px "Microsoft YaHei", "PingFang SC", sans-serif'
+      const remainW = maxW - ctx.measureText(label).width
+      const textX = colLeft + ctx.measureText(label).width
+      const stepText = r.steps[i]
+      const lines = wrapTextLines(ctx, stepText, remainW)
+      for (let li = 0; li < lines.length; li++) {
+        if (li === 0) {
+          ctx.fillText(lines[li], textX, y)
+        } else {
+          y += 22
+          ctx.fillText(lines[li], colLeft + 20, y)
+        }
+      }
+      y += 26
     }
   }
   y += 6
 
-  // ── Steps ──
-  ctx.fillStyle = '#E8734A'
-  ctx.font = 'bold 16px "Microsoft YaHei", sans-serif'
-  ctx.fillText('👨‍🍳 做法步骤', colLeft, y)
-  y += 26
-
-  ctx.font = '13px "Microsoft YaHei", sans-serif'
-  ctx.fillStyle = '#444'
-  if (r.steps && r.steps.length) {
-    const displaySteps = r.steps.slice(0, 6)
-    for (let i = 0; i < displaySteps.length; i++) {
-      const label = `${i + 1}. `
-      ctx.fillText(label, colLeft, y)
-      let line = ''
-      let x = colLeft + ctx.measureText(label).width
-      for (const ch of displaySteps[i]) {
-        const test = line + ch
-        if (ctx.measureText(test).width > maxW - (x - colLeft)) {
-          ctx.fillText(line, x, y)
-          y += 20
-          x = colLeft + 16
-          line = ch
-        } else {
-          line = test
-        }
-      }
-      if (line) ctx.fillText(line, x, y)
-      y += 22
-    }
-  }
-  y += 4
-
   // ── Reason ──
   if (r.reason) {
-    const rh = 32
+    const reasonLines = wrapTextLines(ctx, `💡 ${r.reason}`, maxW)
+    const rh = Math.max(36, reasonLines.length * 20 + 12)
     ctx.fillStyle = '#FFF0E8'
-    ctx.fillRect(colLeft - 8, y - 4, maxW + 16, rh)
+    ctx.fillRect(colLeft - 8, y - 6, maxW + 16, rh)
     ctx.fillStyle = '#666'
-    ctx.font = '12px "Microsoft YaHei", sans-serif'
-    wrapText(ctx, `💡 ${r.reason}`, colLeft, y + 14, maxW, 18)
-    y += rh + 10
+    ctx.font = '14px "Microsoft YaHei", "PingFang SC", sans-serif'
+    let ry = y + 14
+    for (const line of reasonLines) {
+      ctx.fillText(line, colLeft, ry)
+      ry += 20
+    }
+    y += rh + 12
   }
 
   // ── Footer ──
-  if (y < H - 24) y = H - 24
-  ctx.fillStyle = '#CCC'
-  ctx.font = '11px "Microsoft YaHei", sans-serif'
+  if (y < H - 28) y = H - 28
+  ctx.fillStyle = '#BBB'
+  ctx.font = '12px "Microsoft YaHei", "PingFang SC", sans-serif'
   ctx.textAlign = 'center'
   ctx.fillText('由 AI 私厨助手生成', W / 2, y)
+}
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.lineTo(x + w - r, y)
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r)
+  ctx.lineTo(x + w, y + h - r)
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h)
+  ctx.lineTo(x + r, y + h)
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r)
+  ctx.lineTo(x, y + r)
+  ctx.quadraticCurveTo(x, y, x + r, y)
+  ctx.closePath()
+}
+
+// Helper: returns array of wrapped text lines
+function wrapTextLines(ctx, text, maxWidth) {
+  const lines = []
+  let line = ''
+  for (const ch of text) {
+    const test = line + ch
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line)
+      line = ch
+    } else {
+      line = test
+    }
+  }
+  if (line) lines.push(line)
+  return lines.length ? lines : ['']
+}
+
+// Helper: fill wrapped text (centered)
+function fillWrapped(ctx, text, x, y, maxW, lineH) {
+  const lines = wrapTextLines(ctx, text, maxW)
+  for (const line of lines) {
+    ctx.fillText(line, x, y)
+    y += lineH
+  }
 }
 
 function wrapText(ctx, text, x, y, maxW, lineH) {
