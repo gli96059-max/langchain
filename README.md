@@ -21,7 +21,7 @@
 |---|---|
 | 前端 | Vue 3 (Composition API + `<script setup>`), Vite, SSE 流式接收 |
 | 后端 | FastAPI, LangChain, LangGraph Agent |
-| 模型 | Qwen 3.7-Plus (菜谱理解/提取), DeepSeek V4 Flash (Agent 推理) |
+| 模型 | Qwen 3.7-Plus (菜谱理解/提取) |
 | 数据库 | SQLite (会话/消息/菜谱/购物清单/饮食档案) |
 | 搜索 | Tavily API (菜谱搜索与图片) |
 
@@ -47,8 +47,6 @@ npm install
 ```env
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 DASHSCOPE_API_KEY=your_dashscope_api_key
-DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-DEEPSEEK_API_KEY=your_deepseek_api_key
 TAVILY_API_KEY=your_tavily_api_key
 ```
 
