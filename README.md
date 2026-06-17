@@ -21,7 +21,7 @@
 |---|---|
 | 前端 | Vue 3 (Composition API + `<script setup>`), Vite, SSE 流式接收 |
 | 后端 | FastAPI, LangChain, LangGraph Agent |
-| 模型 | Qwen 3.7-Plus (Agent 推理 & 菜谱结构化提取) |
+| 模型 | Qwen 3.7-Plus (菜谱理解/提取) |
 | 数据库 | SQLite (会话/消息/菜谱/购物清单/饮食档案) |
 | 搜索 | Tavily API (菜谱搜索与图片) |
 
