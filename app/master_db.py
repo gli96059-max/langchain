@@ -8,7 +8,7 @@ from passlib.context import CryptContext
 _RESOURCE_DIR = Path(__file__).resolve().parent.parent / "resources"
 _MASTER_DB = _RESOURCE_DIR / "app.db"
 
-_pctx = CryptContext(schemes=["bcrypt"])
+_pctx = CryptContext(schemes=["pbkdf2_sha256"])
 
 
 def _get_conn():
