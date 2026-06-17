@@ -237,7 +237,7 @@ async def analyze_input(
     image_base64: str | None,
     existing_messages: list,
 ) -> dict:
-    """Use Qwen to understand what the user wants and extract ingredients."""
+    """Use Qwen to understand what the user wants and extract intent."""
     has_history = len(existing_messages) > 2
     history_note = "用户之前已经发过消息，这次可能是追问、修改要求或闲聊。" if has_history else "这是用户的第一条消息。"
 
@@ -246,16 +246,19 @@ async def analyze_input(
 分析用户输入，输出 JSON（不要 markdown 代码块）：
 
 {{
-  "action": "search" | "refine" | "chat",
+  "action": "search" | "refine" | "chat" | "specific_dish" | "cooking_question",
   "ingredients": ["食材1", "食材2"],
+  "dishes": ["菜名1", "菜名2"],
   "difficulty_preference": "简单" | "中等" | "困难" | "all",
   "requirements": "其他要求"
 }}
 
 action 取值规则：
-- "search"：用户提供了食材或明确要求推荐菜谱
+- "search"：用户提供了食材或明确要求推荐菜谱，但没有指定具体菜名
 - "refine"：用户对之前推荐的内容提出修改要求（换一个、加辣、不放蒜等）
-- "chat"：只是打招呼、闲聊、问问题，不涉及菜谱
+- "specific_dish"：用户明确问某道菜或某几道菜的做法（如"麻婆豆腐怎么做"、"宫保鸡丁的做法步骤"）
+- "cooking_question"：用户问烹饪技巧、方法或厨房知识（如"炒肉怎么才嫩"、"什么是焯水"）
+- "chat"：只是打招呼、闲聊、问其他问题，不涉及菜谱和烹饪
 
 用户输入：{latest_text}"""
 
@@ -267,7 +270,7 @@ action 取值规则：
         content = _clean_json(response.content)
         return json.loads(content)
     except Exception:
-        return {"action": "chat", "ingredients": [], "difficulty_preference": "all", "requirements": ""}
+        return {"action": "chat", "ingredients": [], "dishes": [], "difficulty_preference": "all", "requirements": ""}
 
 
 async def parallel_search(ingredients: list[str], difficulty_pref: str, requirements: str) -> dict:
@@ -366,6 +369,49 @@ REFINE_PROMPT_TEMPLATE = """你是一位专业 chefs 助手。用户看了之前
 2. 然后输出 =====JSON===== 标记和结构化数据
 
 JSON 格式与之前完全相同。"""
+
+
+SPECIFIC_DISH_PROMPT = """用户想了解以下菜品的做法：{dishes}
+
+{requirements_text}
+{seasonal_text}
+{dietary_text}
+
+请以亲切自然的厨师朋友口吻，给出这道菜的完整做法。回复要包含：
+
+## 食材清单
+列出所有需要的食材和调料，注明用量。
+
+## 详细做法步骤
+每一步都要包含：
+- 具体动作
+- 火候参照（小火不超过锅底，中火覆盖锅底一半，大火覆盖整个锅底）
+- 时间（具体分钟数）
+- 视觉/听觉提示（颜色变化、声音等）
+- 新手注意事项
+
+## 小贴士
+- 成功的关键点
+- 常见替代方案
+
+如果涉及多道菜，请分别介绍每道菜的做法。
+回复要详细、亲切、易懂，像朋友在教你做菜。
+不需要输出 JSON 或结构化数据，纯文字即可。"""
+
+
+COOKING_TIP_PROMPT = """用户问了一个烹饪相关的问题：{question}
+
+{seasonal_text}
+{dietary_text}
+
+请以专业厨师的身份，用亲切易懂的语言回答。回复要包含：
+- 原因解释：为什么这样做
+- 具体操作方法
+- 常见误区提醒
+- 实用小技巧
+
+回复要像朋友聊天一样自然。
+不需要输出 JSON 或结构化数据，纯文字即可。"""
 
 
 async def generate_full_response(
@@ -804,6 +850,85 @@ async def api_chat(session_id: str, req: ChatRequest, current_user: dict = Depen
                     add_message(uid, session_id, "assistant_recipes", json.dumps(recipes_data, ensure_ascii=False), None)
                 else:
                     add_message(uid, session_id, "assistant", text_result, None)
+
+            elif action == "specific_dish":
+                yield _sse_event("status", {"step": "cooking", "message": "为你讲解做法..."})
+                dishes = analysis.get("dishes", [])
+                requirements = analysis.get("requirements", "")
+
+                # Build context strings
+                dietary_parts = []
+                if profile:
+                    if profile.get("allergies"): dietary_parts.append(f"过敏源: {profile['allergies']}")
+                    if profile.get("restrictions"): dietary_parts.append(f"饮食限制: {profile['restrictions']}")
+                    if profile.get("preferences"): dietary_parts.append(f"口味偏好: {profile['preferences']}")
+                dietary_text = f"用户的饮食档案：{'，'.join(dietary_parts)}" if dietary_parts else ""
+                seasonal_text = f"当前时令信息：{seasonal}" if seasonal else ""
+                req_text = f"用户的其他要求：{requirements}" if requirements else ""
+
+                prompt = SPECIFIC_DISH_PROMPT.format(
+                    dishes="、".join(dishes) if dishes else "这道菜",
+                    requirements_text=req_text,
+                    seasonal_text=seasonal_text,
+                    dietary_text=dietary_text,
+                )
+
+                full_text = ""
+                try:
+                    async for chunk in qwen.astream([HumanMessage(content=prompt)]):
+                        if hasattr(chunk, 'content') and chunk.content:
+                            full_text += chunk.content
+                            yield _sse_event("chunk", {"text": chunk.content})
+                except Exception as e:
+                    logger.warning("specific_dish stream failed, falling back to batch: %s", e)
+                    response = await asyncio.to_thread(qwen.invoke, [HumanMessage(content=prompt)])
+                    full_text = response.content or ""
+                    yield _sse_event("chunk", {"text": full_text})
+
+                if not full_text:
+                    yield _sse_event("error", {"message": "未收到有效回复"})
+                    add_message(uid, session_id, "assistant", "抱歉，我没有生成有效回复。", None)
+                    return
+
+                yield _sse_event("response", {"text": full_text})
+                add_message(uid, session_id, "assistant", full_text, None)
+
+            elif action == "cooking_question":
+                yield _sse_event("status", {"step": "answering", "message": "回答中..."})
+
+                dietary_parts = []
+                if profile:
+                    if profile.get("allergies"): dietary_parts.append(f"过敏源: {profile['allergies']}")
+                    if profile.get("restrictions"): dietary_parts.append(f"饮食限制: {profile['restrictions']}")
+                    if profile.get("preferences"): dietary_parts.append(f"口味偏好: {profile['preferences']}")
+                dietary_text = f"用户的饮食档案：{'，'.join(dietary_parts)}" if dietary_parts else ""
+                seasonal_text = f"当前时令信息：{seasonal}" if seasonal else ""
+
+                prompt = COOKING_TIP_PROMPT.format(
+                    question=req.message,
+                    seasonal_text=seasonal_text,
+                    dietary_text=dietary_text,
+                )
+
+                full_text = ""
+                try:
+                    async for chunk in qwen.astream([HumanMessage(content=prompt)]):
+                        if hasattr(chunk, 'content') and chunk.content:
+                            full_text += chunk.content
+                            yield _sse_event("chunk", {"text": chunk.content})
+                except Exception as e:
+                    logger.warning("cooking_question stream failed, falling back to batch: %s", e)
+                    response = await asyncio.to_thread(qwen.invoke, [HumanMessage(content=prompt)])
+                    full_text = response.content or ""
+                    yield _sse_event("chunk", {"text": full_text})
+
+                if not full_text:
+                    yield _sse_event("error", {"message": "未收到有效回复"})
+                    add_message(uid, session_id, "assistant", "抱歉，我没有生成有效回复。", None)
+                    return
+
+                yield _sse_event("response", {"text": full_text})
+                add_message(uid, session_id, "assistant", full_text, None)
 
             else:  # "chat" — general chat, fall through to agent
                 yield _sse_event("status", {"step": "chatting", "message": "回复中..."})

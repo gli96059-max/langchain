@@ -13,3 +13,4 @@ resources/*.db-shm
 resources/*.db-wal
 resources/*.db.tmp
 resources/test_recipes.json
+*.log
