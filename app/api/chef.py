@@ -5,7 +5,6 @@ import asyncio
 import os
 import logging
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger("chef")
 
@@ -34,60 +33,42 @@ from app.db import (
     update_shopping_list_items,
     delete_shopping_list,
     batch_delete_sessions,
-    create_user,
-    verify_user,
-    get_pool,
+    init_user_db,
 )
 from app.agents.project import build_chief_agent
 from app.seasonal import get_seasonal_context
 from app.auth import create_token, get_current_user
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from app.master_db import create_user, verify_user
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+import aiosqlite
 from model_config import qwen
 
 router = APIRouter(prefix="/api", tags=["chef"])
 
-# ── Agent pool (shared PostgreSQL checkpointer) ────────────────────
-# With PostgreSQL there is no need for per-user checkpoint DBs —
-# MVCC + connection pool handle concurrent writes natively.
-# Thread-id "{uid}:{session_id}" provides logical isolation.
+# ── Shared checkpointer ────────────────────────────────────────────
+CHECKPOINT_DB = Path(__file__).resolve().parent.parent.parent / "resources" / "checkpoint_v2.db"
+CHECKPOINT_DB.parent.mkdir(parents=True, exist_ok=True)
 
-_init_lock = asyncio.Lock()
-_checkpointer: AsyncPostgresSaver | None = None
-_agent_pool: dict[str, Any] = {}  # user_id -> agent
+_checkpoint_conn = None
 
 
 async def _get_checkpointer():
-    global _checkpointer
-    if _checkpointer is not None:
-        return _checkpointer
-    async with _init_lock:
-        if _checkpointer is not None:
-            return _checkpointer
-        pool = get_pool()
-        _checkpointer = AsyncPostgresSaver(pool)
-        await _checkpointer.setup()
-        return _checkpointer
+    global _checkpoint_conn
+    if _checkpoint_conn is None:
+        _checkpoint_conn = await aiosqlite.connect(str(CHECKPOINT_DB))
+    return AsyncSqliteSaver(_checkpoint_conn)
 
 
-async def _get_agent_for_user(user_id: str):
-    """Get-or-create a LangGraph agent (cached per user, shared checkpointer).
+_agent_cache = None
 
-    With PostgreSQL the checkpointer can safely serve all users — thread-id
-    prefixes provide isolation so there is zero write contention between
-    different conversations.
-    """
-    agent = _agent_pool.get(user_id)
-    if agent is not None:
-        return agent
-    async with _init_lock:
-        agent = _agent_pool.get(user_id)
-        if agent is not None:
-            return agent
+
+async def _get_agent():
+    global _agent_cache
+    if _agent_cache is None:
         checkpointer = await _get_checkpointer()
-        agent = build_chief_agent(checkpointer=checkpointer)
-        _agent_pool[user_id] = agent
-        return agent
+        _agent_cache = build_chief_agent(checkpointer=checkpointer)
+    return _agent_cache
 
 
 # ── Auth Models ────────────────────────────────────────────────────
@@ -140,19 +121,21 @@ class CreateSessionResponse(BaseModel):
 # ── Auth endpoints ─────────────────────────────────────────────────
 
 @router.post("/auth/register")
-async def api_register(req: AuthRequest):
-    user = await create_user(req.username, req.password)
+def api_register(req: AuthRequest):
+    user = create_user(req.username, req.password)
     if not user:
         raise HTTPException(status_code=409, detail="用户名已存在或密码不符合要求")
+    init_user_db(user["id"])
     token = create_token(user["id"])
     return AuthResponse(token=token, user=user)
 
 
 @router.post("/auth/login")
-async def api_login(req: AuthRequest):
-    user = await verify_user(req.username, req.password)
+def api_login(req: AuthRequest):
+    user = verify_user(req.username, req.password)
     if not user:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
+    init_user_db(user["id"])
     token = create_token(user["id"])
     return AuthResponse(token=token, user=user)
 
@@ -544,39 +527,38 @@ async def enrich_recipes_with_images(recipes: list[dict]) -> list[dict]:
 # ── Session endpoints ──────────────────────────────────────────────
 
 @router.post("/sessions", response_model=CreateSessionResponse)
-async def api_create_session(current_user: dict = Depends(get_current_user)):
-    session = await create_session(current_user["id"])
+def api_create_session(current_user: dict = Depends(get_current_user)):
+    session = create_session(current_user["id"])
     return CreateSessionResponse(session=SessionResponse(**session))
 
 
 @router.get("/sessions")
-async def api_list_sessions(current_user: dict = Depends(get_current_user)):
-    return await list_sessions(current_user["id"])
+def api_list_sessions(current_user: dict = Depends(get_current_user)):
+    return list_sessions(current_user["id"])
 
 
 @router.get("/sessions/{session_id}", response_model=dict)
-async def api_get_session(session_id: str, current_user: dict = Depends(get_current_user)):
-    session = await get_session(current_user["id"], session_id)
+def api_get_session(session_id: str, current_user: dict = Depends(get_current_user)):
+    session = get_session(current_user["id"], session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    messages = await get_messages(current_user["id"], session_id)
+    messages = get_messages(current_user["id"], session_id)
     return {"session": SessionResponse(**session), "messages": messages}
 
 
 @router.put("/sessions/{session_id}")
-async def api_rename_session(session_id: str, req: ChatRequest, current_user: dict = Depends(get_current_user)):
+def api_rename_session(session_id: str, req: ChatRequest, current_user: dict = Depends(get_current_user)):
     if not session_id or not req.message:
         raise HTTPException(status_code=400, detail="Title is required")
-    await update_session_title(current_user["id"], session_id, req.message.strip()[:50])
+    update_session_title(current_user["id"], session_id, req.message.strip()[:50])
     return {"ok": True}
 
 
 @router.delete("/sessions/{session_id}")
-async def api_delete_session(session_id: str, current_user: dict = Depends(get_current_user)):
-    session = await get_session(current_user["id"], session_id)
-    if not session:
+def api_delete_session(session_id: str, current_user: dict = Depends(get_current_user)):
+    if not get_session(current_user["id"], session_id):
         raise HTTPException(status_code=404, detail="Session not found")
-    await delete_session(current_user["id"], session_id)
+    delete_session(current_user["id"], session_id)
     return {"ok": True}
 
 
@@ -585,17 +567,17 @@ class BatchDeleteRequest(BaseModel):
 
 
 @router.post("/sessions/batch-delete")
-async def api_batch_delete_sessions(req: BatchDeleteRequest, current_user: dict = Depends(get_current_user)):
+def api_batch_delete_sessions(req: BatchDeleteRequest, current_user: dict = Depends(get_current_user)):
     if not req.ids:
         return {"ok": True}
-    await batch_delete_sessions(current_user["id"], req.ids)
+    batch_delete_sessions(current_user["id"], req.ids)
     return {"ok": True}
 
 
 # ── Recipe library ────────────────────────────────────────────────
 
 @router.get("/recipes")
-async def api_list_recipes(
+def api_list_recipes(
     search: str | None = None,
     difficulty: str | None = None,
     ingredient: str | None = None,
@@ -603,7 +585,7 @@ async def api_list_recipes(
     taste: str | None = None,
     current_user: dict = Depends(get_current_user),
 ):
-    return await list_all_recipes(
+    return list_all_recipes(
         user_id=current_user["id"],
         search_text=search,
         difficulty=difficulty,
@@ -614,18 +596,18 @@ async def api_list_recipes(
 
 
 @router.delete("/recipes/{recipe_id}")
-async def api_delete_recipe(recipe_id: str, current_user: dict = Depends(get_current_user)):
-    deleted = await delete_recipe(current_user["id"], recipe_id)
+def api_delete_recipe(recipe_id: str, current_user: dict = Depends(get_current_user)):
+    deleted = delete_recipe(current_user["id"], recipe_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Recipe not found")
     return {"ok": True}
 
 
 @router.post("/recipes/batch-delete")
-async def api_batch_delete_recipes(req: BatchDeleteRecipesRequest, current_user: dict = Depends(get_current_user)):
+def api_batch_delete_recipes(req: BatchDeleteRecipesRequest, current_user: dict = Depends(get_current_user)):
     if not req.ids:
         return {"ok": True}
-    await batch_delete_recipes(current_user["id"], req.ids)
+    batch_delete_recipes(current_user["id"], req.ids)
     return {"ok": True}
 
 
@@ -642,58 +624,58 @@ class ShoppingListItemsRequest(BaseModel):
 
 
 @router.post("/shopping-lists")
-async def api_save_shopping_list(req: ShoppingListSaveRequest, current_user: dict = Depends(get_current_user)):
-    return await save_shopping_list(current_user["id"], req.name, req.session_id, req.items)
+def api_save_shopping_list(req: ShoppingListSaveRequest, current_user: dict = Depends(get_current_user)):
+    return save_shopping_list(current_user["id"], req.name, req.session_id, req.items)
 
 
 @router.get("/shopping-lists")
-async def api_list_shopping_lists(current_user: dict = Depends(get_current_user)):
-    return await list_shopping_lists(current_user["id"])
+def api_list_shopping_lists(current_user: dict = Depends(get_current_user)):
+    return list_shopping_lists(current_user["id"])
 
 
 @router.get("/shopping-lists/{list_id}")
-async def api_get_shopping_list(list_id: str, current_user: dict = Depends(get_current_user)):
-    lst = await get_shopping_list(current_user["id"], list_id)
+def api_get_shopping_list(list_id: str, current_user: dict = Depends(get_current_user)):
+    lst = get_shopping_list(current_user["id"], list_id)
     if not lst:
         raise HTTPException(status_code=404, detail="Shopping list not found")
     return lst
 
 
 @router.put("/shopping-lists/{list_id}")
-async def api_update_shopping_list(list_id: str, req: ShoppingListItemsRequest, current_user: dict = Depends(get_current_user)):
-    lst = await update_shopping_list_items(current_user["id"], list_id, req.items)
+def api_update_shopping_list(list_id: str, req: ShoppingListItemsRequest, current_user: dict = Depends(get_current_user)):
+    lst = update_shopping_list_items(current_user["id"], list_id, req.items)
     if not lst:
         raise HTTPException(status_code=404, detail="Shopping list not found")
     return lst
 
 
 @router.delete("/shopping-lists/{list_id}")
-async def api_delete_shopping_list(list_id: str, current_user: dict = Depends(get_current_user)):
-    await delete_shopping_list(current_user["id"], list_id)
+def api_delete_shopping_list(list_id: str, current_user: dict = Depends(get_current_user)):
+    delete_shopping_list(current_user["id"], list_id)
     return {"ok": True}
 
 
 # ── Dietary profile endpoints ─────────────────────────────────────
 
 @router.get("/dietary-profile")
-async def api_get_dietary_profile(current_user: dict = Depends(get_current_user)):
-    profile = await get_dietary_profile(current_user["id"])
+def api_get_dietary_profile(current_user: dict = Depends(get_current_user)):
+    profile = get_dietary_profile(current_user["id"])
     if not profile:
         return {"allergies": "", "restrictions": "", "preferences": "", "difficulty_preference": ""}
     return profile
 
 
 @router.put("/dietary-profile")
-async def api_update_dietary_profile(req: DietaryProfileRequest, current_user: dict = Depends(get_current_user)):
-    profile = await upsert_dietary_profile(current_user["id"], req.allergies, req.restrictions, req.preferences, req.difficulty_preference)
+def api_update_dietary_profile(req: DietaryProfileRequest, current_user: dict = Depends(get_current_user)):
+    profile = upsert_dietary_profile(current_user["id"], req.allergies, req.restrictions, req.preferences, req.difficulty_preference)
     return profile
 
 
 # ── Manual recipe save ────────────────────────────────────────────
 
 @router.post("/recipes")
-async def api_save_recipe(req: SaveRecipeRequest, current_user: dict = Depends(get_current_user)):
-    r = await save_recipe(current_user["id"], req.session_id, req.recipe_data)
+def api_save_recipe(req: SaveRecipeRequest, current_user: dict = Depends(get_current_user)):
+    r = save_recipe(current_user["id"], req.session_id, req.recipe_data)
     return {"ok": True, "recipe": r}
 
 
@@ -702,7 +684,7 @@ async def api_save_recipe(req: SaveRecipeRequest, current_user: dict = Depends(g
 @router.post("/chat/{session_id}")
 async def api_chat(session_id: str, req: ChatRequest, current_user: dict = Depends(get_current_user)):
     uid = current_user["id"]
-    if not await get_session(uid, session_id):
+    if not get_session(uid, session_id):
         raise HTTPException(status_code=404, detail="Session not found")
 
     content_parts = []
@@ -720,13 +702,13 @@ async def api_chat(session_id: str, req: ChatRequest, current_user: dict = Depen
 
     # DB: save user message & auto-title
     image_url = f"data:image/png;base64,{req.image_base64}" if req.image_base64 else None
-    await add_message(uid, session_id, "user", req.message, image_url)
-    existing = await get_messages(uid, session_id)
+    add_message(uid, session_id, "user", req.message, image_url)
+    existing = get_messages(uid, session_id)
     if len(existing) == 1:
-        await update_session_title(uid, session_id, _auto_title(req.message))
+        update_session_title(uid, session_id, _auto_title(req.message))
 
     # Inject dietary profile if set
-    profile = await get_dietary_profile(uid)
+    profile = get_dietary_profile(uid)
     extra_msgs = []
     if profile and (profile["allergies"] or profile["restrictions"] or profile["preferences"] or profile.get("difficulty_preference")):
         parts = []
@@ -778,14 +760,14 @@ async def api_chat(session_id: str, req: ChatRequest, current_user: dict = Depen
 
                 if not text_result:
                     # Fallback to agent
-                    agent = await _get_agent_for_user(uid)
+                    agent = await _get_agent()
                     response = await asyncio.to_thread(agent.invoke, {"messages": msgs}, config)
                     text_result = _extract_assistant_text(response)
                     recipes_data = None
 
                 if not text_result:
                     yield _sse_event("error", {"message": "未收到有效回复"})
-                    await add_message(uid, session_id, "assistant", "抱歉，我没有生成有效回复。", None)
+                    add_message(uid, session_id, "assistant", "抱歉，我没有生成有效回复。", None)
                     return
 
                 yield _sse_event("response", {"text": text_result})
@@ -794,23 +776,23 @@ async def api_chat(session_id: str, req: ChatRequest, current_user: dict = Depen
                     enriched = await enrich_recipes_with_images(recipes_data.get("recipes", []))
                     recipes_data["recipes"] = enriched
                     yield _sse_event("result", recipes_data)
-                    await add_message(uid, session_id, "assistant_recipes", json.dumps(recipes_data, ensure_ascii=False), None)
+                    add_message(uid, session_id, "assistant_recipes", json.dumps(recipes_data, ensure_ascii=False), None)
                 else:
-                    await add_message(uid, session_id, "assistant", text_result, None)
+                    add_message(uid, session_id, "assistant", text_result, None)
 
             elif action == "refine":
                 yield _sse_event("status", {"step": "refining", "message": "根据要求调整推荐中..."})
                 text_result, recipes_data = await generate_refinement(req.message, existing, profile)
 
                 if not text_result:
-                    agent = await _get_agent_for_user(uid)
+                    agent = await _get_agent()
                     response = await asyncio.to_thread(agent.invoke, {"messages": msgs}, config)
                     text_result = _extract_assistant_text(response)
                     recipes_data = None
 
                 if not text_result:
                     yield _sse_event("error", {"message": "未收到有效回复"})
-                    await add_message(uid, session_id, "assistant", "抱歉，我没有生成有效回复。", None)
+                    add_message(uid, session_id, "assistant", "抱歉，我没有生成有效回复。", None)
                     return
 
                 yield _sse_event("response", {"text": text_result})
@@ -819,35 +801,35 @@ async def api_chat(session_id: str, req: ChatRequest, current_user: dict = Depen
                     enriched = await enrich_recipes_with_images(recipes_data.get("recipes", []))
                     recipes_data["recipes"] = enriched
                     yield _sse_event("result", recipes_data)
-                    await add_message(uid, session_id, "assistant_recipes", json.dumps(recipes_data, ensure_ascii=False), None)
+                    add_message(uid, session_id, "assistant_recipes", json.dumps(recipes_data, ensure_ascii=False), None)
                 else:
-                    await add_message(uid, session_id, "assistant", text_result, None)
+                    add_message(uid, session_id, "assistant", text_result, None)
 
             else:  # "chat" — general chat, fall through to agent
                 yield _sse_event("status", {"step": "chatting", "message": "回复中..."})
-                agent = await _get_agent_for_user(uid)
+                agent = await _get_agent()
                 response = await asyncio.to_thread(agent.invoke, {"messages": msgs}, config)
                 assistant_text = _extract_assistant_text(response)
 
                 if not assistant_text:
                     yield _sse_event("error", {"message": "未收到有效回复"})
-                    await add_message(uid, session_id, "assistant", "抱歉，我没有生成有效回复。", None)
+                    add_message(uid, session_id, "assistant", "抱歉，我没有生成有效回复。", None)
                     return
 
                 yield _sse_event("response", {"text": assistant_text})
-                await add_message(uid, session_id, "assistant", assistant_text, None)
+                add_message(uid, session_id, "assistant", assistant_text, None)
 
         except Exception as e:
             logger.exception("chat_stream exception: %s", e)
             error_occurred = True
             # Final fallback: try the original agent
             try:
-                agent = await _get_agent_for_user(uid)
+                agent = await _get_agent()
                 response = await asyncio.to_thread(agent.invoke, {"messages": msgs}, config)
                 assistant_text = _extract_assistant_text(response)
                 if assistant_text:
                     yield _sse_event("response", {"text": assistant_text})
-                    await add_message(uid, session_id, "assistant", assistant_text, None)
+                    add_message(uid, session_id, "assistant", assistant_text, None)
                     yield _sse_event("done", {})
                     return
             except Exception as e2:

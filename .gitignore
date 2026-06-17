@@ -3,7 +3,6 @@ uploads/*
 !uploads/.gitkeep
 __pycache__/
 *.pyc
-*.log
 node_modules/
 dist/
 .vite/
