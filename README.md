@@ -48,6 +48,7 @@ npm install
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 DASHSCOPE_API_KEY=your_dashscope_api_key
 TAVILY_API_KEY=your_tavily_api_key
+JWT_SECRET=your_jwt_secret_change_this
 ```
 
 ### 启动服务

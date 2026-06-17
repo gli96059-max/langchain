@@ -227,11 +227,11 @@ function close() {
   }
   .reader-footer {
     padding: 12px 16px;
-    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(12px + var(--safe-bottom, 0px));
   }
   .reader-header {
     padding: 12px 16px;
-    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+    padding-top: calc(12px + var(--safe-top, 0px));
   }
   .reader-nav-btn {
     padding: 12px 20px;

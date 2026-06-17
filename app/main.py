@@ -6,18 +6,23 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from app.api.chef import router as chef_router
+from app.master_db import init_master_db
 
 app = FastAPI(
-    title="AI 私厨助手",
-    description="基于 LangChain + Qwen 的智能私厨助手",
-    version="1.0.0",
+    title="小斐的专属私厨助手",
+    description="基于 LangChain + Qwen 的小斐的专属智能私厨助手",
+    version="1.2.0",
 )
 
-# ── CORS (allow Vue dev server) ────────────────────────────────────
+
+@app.on_event("startup")
+def on_startup():
+    init_master_db()
+
+# ── CORS (allow Vue dev server + mobile) ────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

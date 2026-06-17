@@ -3,3 +3,10 @@ import App from './App.vue'
 import './style.css'
 
 createApp(App).mount('#app')
+
+// Register service worker for PWA
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+  })
+}

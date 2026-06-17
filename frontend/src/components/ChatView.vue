@@ -14,6 +14,7 @@ const messages = ref([])
 const isStreaming = ref(false)
 const statusMsg = ref('')
 const statusStep = ref('')
+const messagesArea = ref(null)
 const messagesEnd = ref(null)
 const showShoppingList = ref(false)
 const savedRecipeNames = ref(new Set())
@@ -82,9 +83,6 @@ async function handleSend({ text, imageBase64 }) {
       scrollToBottom()
     }
 
-    // Decide what to show:
-    // - If recipes detected → show cards only (clean & visual)
-    // - If no recipes → show text response
     if (pendingResult) {
       messages.value.push({
         role: 'assistant_recipes',
@@ -95,12 +93,12 @@ async function handleSend({ text, imageBase64 }) {
       messages.value.push({ role: 'assistant', content: pendingResponse })
     }
   } catch (err) {
+    console.error('[ChatView] SSE error:', err)
     messages.value.push({ role: 'assistant', content: `❌ 请求失败: ${err.message}` })
   } finally {
     isStreaming.value = false
     statusMsg.value = ''
     statusStep.value = ''
-
     scrollToBottom()
     emit('message-completed')
   }
@@ -108,7 +106,6 @@ async function handleSend({ text, imageBase64 }) {
 
 function handleRecipeSave(recipe) {
   savedRecipeNames.value.add(recipe.name)
-  // Force reactivity
   savedRecipeNames.value = new Set(savedRecipeNames.value)
 }
 
@@ -125,19 +122,17 @@ function scrollToBottom() {
 
 <template>
   <div class="chat-view">
-    <div class="messages-area">
+    <div class="messages-area" ref="messagesArea">
       <div class="messages-container">
         <template v-for="(msg, idx) in messages" :key="idx">
-          <!-- User message -->
           <div v-if="msg.role === 'user'" class="message-row user-row">
             <div class="message-bubble user-bubble">
               <img v-if="msg.image_url" :src="msg.image_url" class="user-image" />
               <p v-if="msg.content">{{ msg.content }}</p>
-              <span v-if="msg.image_url && !msg.content" class="img-badge">📷 食材图片已上传</span>
+              <span v-if="msg.image_url && !msg.content" class="img-badge">📷 食材图片</span>
             </div>
           </div>
 
-          <!-- Assistant text message -->
           <div v-else-if="msg.role === 'assistant'" class="message-row assistant-row">
             <div class="assistant-avatar">🍳</div>
             <div class="message-bubble assistant-bubble">
@@ -145,7 +140,6 @@ function scrollToBottom() {
             </div>
           </div>
 
-          <!-- Recipe cards -->
           <div v-else-if="msg.role === 'assistant_recipes'" class="message-row assistant-row">
             <div class="assistant-avatar">🍳</div>
             <div class="recipes-wrapper">
@@ -165,7 +159,6 @@ function scrollToBottom() {
           </div>
         </template>
 
-        <!-- Shopping list button -->
         <div v-if="allRecipes.length" class="shopping-bar">
           <button class="shopping-btn" @click="showShoppingList = true">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -181,7 +174,6 @@ function scrollToBottom() {
           />
         </div>
 
-        <!-- Streaming status -->
         <div v-if="isStreaming" class="message-row assistant-row">
           <div class="assistant-avatar">🍳</div>
           <div class="status-indicator" :class="statusStep">
@@ -207,26 +199,30 @@ function scrollToBottom() {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 
 .messages-area {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 0;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 16px 0;
 }
 
 .messages-container {
   max-width: 760px;
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .message-row {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   animation: fadeIn 0.3s ease;
 }
 
@@ -240,15 +236,16 @@ function scrollToBottom() {
 }
 
 .assistant-avatar {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   background: var(--color-primary-light);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 17px;
   flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .message-bubble {
@@ -256,7 +253,7 @@ function scrollToBottom() {
   padding: 12px 16px;
   border-radius: var(--radius-md);
   font-size: 15px;
-  line-height: 1.6;
+  line-height: 1.65;
 }
 
 .user-bubble {
@@ -273,14 +270,14 @@ function scrollToBottom() {
 
 .user-image {
   display: block;
-  max-width: 240px;
-  max-height: 180px;
+  max-width: 200px;
+  max-height: 160px;
   width: auto;
   height: auto;
   border-radius: var(--radius-sm);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   object-fit: contain;
-  background: rgba(0,0,0,0.05);
+  background: rgba(0,0,0,0.04);
 }
 
 .img-badge {
@@ -295,19 +292,19 @@ function scrollToBottom() {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 .shopping-bar {
   display: flex;
   justify-content: center;
-  margin-top: 4px;
 }
 
 .shopping-btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 20px;
+  padding: 12px 20px;
   background: var(--color-primary-light);
   color: var(--color-primary);
   border: 1px solid var(--color-border);
@@ -315,14 +312,14 @@ function scrollToBottom() {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
   font-family: var(--font-sans);
+  min-height: 44px;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.shopping-btn:hover {
+.shopping-btn:active {
   background: var(--color-primary);
   color: #fff;
-  border-color: var(--color-primary);
 }
 
 .summary-text {
@@ -330,7 +327,7 @@ function scrollToBottom() {
   padding: 14px 18px;
   border-radius: var(--radius-md);
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--color-text);
   border: 1px solid var(--color-border);
 }
@@ -386,8 +383,7 @@ function scrollToBottom() {
     padding: 10px 14px;
   }
   .messages-area {
-    padding: 12px 0;
-    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    padding: 10px 0;
   }
   .assistant-avatar {
     width: 30px;
@@ -395,13 +391,12 @@ function scrollToBottom() {
     font-size: 15px;
   }
   .user-image {
-    max-width: 180px;
-    max-height: 140px;
+    max-width: 160px;
+    max-height: 130px;
   }
   .shopping-btn {
     width: 100%;
     justify-content: center;
-    padding: 12px 16px;
     font-size: 14px;
   }
   .summary-text {

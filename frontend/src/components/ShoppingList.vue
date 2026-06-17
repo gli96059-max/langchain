@@ -147,12 +147,15 @@ async function doSave() {
     ? recipeNames.join('、')
     : recipeNames.slice(0, 2).join('、') + ` 等${recipeNames.length}道菜`
 
-  const items = active.map(i => ({
-    text: i.text,
-    category: i.category,
-    source_recipe: i.sources[0] || '',
-    checked: false,
-  }))
+  // Exclude items that the user has clicked (struck through)
+  const items = active
+    .filter(i => !checkedIngs.value.has(i.text.toLowerCase()))
+    .map(i => ({
+      text: i.text,
+      category: i.category,
+      source_recipe: i.sources[0] || '',
+      checked: false,
+    }))
 
   try {
     await saveShoppingList(name, '', items)
@@ -528,14 +531,15 @@ async function doSave() {
 @media (max-width: 768px) {
   .modal-panel { width: 100vw; max-width: 100vw; max-height: 85vh; border-radius: var(--radius-lg) var(--radius-lg) 0 0; margin-top: auto; }
   .modal-overlay { align-items: flex-end; }
-  .modal-header { padding: 16px 18px; }
-  .modal-body { padding: 12px 18px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
-  .modal-footer { padding: 12px 18px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .modal-header { padding: 16px 18px; padding-top: calc(16px + var(--safe-top, 0px)); }
+  .modal-body { padding: 12px 18px; padding-bottom: calc(12px + var(--safe-bottom, 0px)); }
+  .modal-footer { padding: 12px 18px; padding-bottom: calc(12px + var(--safe-bottom, 0px)); }
   .recipe-chip { padding: 10px 14px; font-size: 14px; }
-  .ing-item { padding: 10px 8px; }
+  .ing-item { padding: 10px 8px; min-height: 44px; }
   .ing-text { font-size: 15px; }
   .ing-source { max-width: 80px; }
   .ing-remove { width: 32px; height: 32px; font-size: 16px; opacity: 1; }
-  .btn-copy, .btn-close { flex: 1; text-align: center; padding: 12px 16px; justify-content: center; }
+  .btn-save { flex: 1; text-align: center; justify-content: center; padding: 12px 16px; min-height: 44px; }
+  .btn-copy, .btn-close { flex: 1; text-align: center; padding: 12px 16px; min-height: 44px; justify-content: center; }
 }
 </style>

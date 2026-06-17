@@ -111,7 +111,7 @@ onMounted(loadLists)
       <button class="back-btn" @click="view === 'detail' ? closeDetail() : emit('close')">
         ← {{ view === 'detail' ? '返回清单' : '返回' }}
       </button>
-      <h2>🛒 购物清单</h2>
+      <h2>🛒 小斐的购物清单</h2>
     </div>
 
     <!-- List view -->
@@ -385,9 +385,15 @@ onMounted(loadLists)
 .sl-delete-btn:hover { background: var(--color-danger); color: #fff; }
 
 @media (max-width: 768px) {
-  .sl-header { padding: 12px 14px; padding-top: calc(12px + env(safe-area-inset-top, 0px)); }
+  .sl-header { padding: 12px 14px; padding-top: calc(12px + var(--safe-top, 0px)); }
+  .sl-header h2 { font-size: 16px; }
+  .back-btn { padding: 10px 14px; min-height: 40px; font-size: 14px; }
   .sl-list { padding: 12px 14px; }
-  .sl-detail-body { padding: 12px 14px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
-  .sl-item { padding: 10px 8px; }
+  .sl-card { padding: 14px 16px; }
+  .sl-card-delete { width: 32px; height: 32px; font-size: 16px; }
+  .sl-detail-body { padding: 12px 14px; padding-bottom: calc(12px + var(--safe-bottom, 0px)); }
+  .sl-item { padding: 12px 8px; min-height: 44px; }
+  .sl-item-text { font-size: 15px; }
+  .sl-delete-btn { padding: 12px 24px; min-height: 44px; width: 100%; text-align: center; }
 }
 </style>

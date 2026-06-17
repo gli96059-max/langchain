@@ -23,41 +23,66 @@ function autoResize() {
 }
 
 function resizeImage(file) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => {
-      let { width, height } = img
-      if (width > MAX_DIM || height > MAX_DIM) {
-        if (width > height) {
-          height = Math.round((height / width) * MAX_DIM)
-          width = MAX_DIM
-        } else {
-          width = Math.round((width / height) * MAX_DIM)
-          height = MAX_DIM
+      try {
+        let { width, height } = img
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) {
+            height = Math.round((height / width) * MAX_DIM)
+            width = MAX_DIM
+          } else {
+            width = Math.round((width / height) * MAX_DIM)
+            height = MAX_DIM
+          }
         }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+        resolve(canvas.toDataURL('image/jpeg', 0.85))
+      } catch (e) {
+        reject(e)
       }
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext('2d')
-      ctx.drawImage(img, 0, 0, width, height)
-      resolve(canvas.toDataURL('image/jpeg', 0.85))
     }
+    img.onerror = () => reject(new Error('图片加载失败'))
     img.src = URL.createObjectURL(file)
   })
 }
 
-function handleFileSelect(e) {
+/** Fallback: read raw file as base64 without canvas (for mobile browsers) */
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('文件读取失败'))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function handleFileSelect(e) {
   const file = e.target.files?.[0]
   if (!file) return
   if (!file.type.startsWith('image/')) {
     alert('请选择图片文件')
     return
   }
-  resizeImage(file).then(dataUrl => {
+  try {
+    const dataUrl = await resizeImage(file)
     imageBase64.value = dataUrl.split(',')[1] || dataUrl
     imagePreview.value = dataUrl
-  })
+  } catch {
+    // Canvas failed (mobile browser restriction), fallback to raw read
+    try {
+      const dataUrl = await readFileAsBase64(file)
+      imageBase64.value = dataUrl.split(',')[1] || dataUrl
+      imagePreview.value = dataUrl
+    } catch {
+      alert('图片处理失败，请重试或选择其他图片')
+    }
+  }
   e.target.value = ''
 }
 
@@ -268,7 +293,7 @@ function handleKeydown(e) {
 @media (max-width: 768px) {
   .chat-input-area {
     padding: 10px 10px;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(10px + var(--safe-bottom, 0px));
   }
   .input-row {
     padding: 6px 6px 6px 10px;

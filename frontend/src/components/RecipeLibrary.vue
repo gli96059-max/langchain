@@ -129,7 +129,7 @@ onMounted(loadRecipes)
   <div class="library">
     <div class="library-header">
       <button class="back-btn" @click="emit('close')">← 返回</button>
-      <h2>📚 菜谱库</h2>
+      <h2>📚 小斐的菜谱库</h2>
       <span class="recipe-count">{{ recipes.length }} 道菜</span>
       <div class="header-actions">
         <button v-if="!batchMode && recipes.length" class="batch-toggle-btn" @click="enterBatchMode">
@@ -563,17 +563,23 @@ onMounted(loadRecipes)
 @media (max-width: 768px) {
   .library-header {
     padding: 12px 14px;
-    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+    padding-top: calc(12px + var(--safe-top, 0px));
   }
+  .library-header h2 { font-size: 16px; }
+  .back-btn { padding: 10px 14px; min-height: 40px; font-size: 14px; }
+  .batch-toggle-btn { padding: 10px 14px; font-size: 13px; min-height: 40px; }
   .filter-bar {
     padding: 10px 14px;
   }
   .search-row {
     flex-direction: column;
   }
-  .ingredient-input {
+  .search-input, .ingredient-input {
     width: 100%;
+    padding: 12px 14px;
+    font-size: 16px;
   }
+  .search-input { padding: 12px 14px 12px 36px; }
   .filter-row {
     flex-wrap: wrap;
     gap: 8px;
@@ -591,12 +597,16 @@ onMounted(loadRecipes)
   .clear-btn {
     width: 100%;
     text-align: center;
-    padding: 10px;
+    padding: 12px;
+    min-height: 44px;
+    font-size: 14px;
   }
   .filter-chip {
     font-size: 12px;
     padding: 6px 10px 6px 12px;
   }
+  .batch-bar { padding: 10px 14px; }
+  .batch-btn { padding: 8px 16px; min-height: 40px; font-size: 13px; }
   .recipe-grid {
     padding: 14px;
     gap: 14px;

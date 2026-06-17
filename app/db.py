@@ -4,19 +4,23 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_DIR = Path(__file__).resolve().parent.parent / "resources"
-DB_PATH = DB_DIR / "sessions.db"
+_RESOURCE_DIR = Path(__file__).resolve().parent.parent / "resources"
 
 
-def get_connection():
-    DB_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+def _user_db_path(user_id: str) -> Path:
+    return _RESOURCE_DIR / f"user_{user_id}.db"
+
+
+def get_connection(user_id: str):
+    _RESOURCE_DIR.mkdir(parents=True, exist_ok=True)
+    path = _user_db_path(user_id)
+    conn = sqlite3.connect(str(path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
 
-def init_db():
-    conn = get_connection()
+def init_user_db(user_id: str):
+    conn = get_connection(user_id)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY,
@@ -40,6 +44,7 @@ def init_db():
             allergies TEXT NOT NULL DEFAULT '',
             restrictions TEXT NOT NULL DEFAULT '',
             preferences TEXT NOT NULL DEFAULT '',
+            difficulty_preference TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -63,11 +68,19 @@ def init_db():
         );
     """)
     conn.commit()
+    # Migration for existing databases
+    try:
+        conn.execute("ALTER TABLE dietary_profile ADD COLUMN difficulty_preference TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+    except Exception:
+        pass
     conn.close()
 
 
-def create_session(title: str = "新对话") -> dict:
-    conn = get_connection()
+# ── Sessions ──────────────────────────────────────────────────────────
+
+def create_session(user_id: str, title: str = "新对话") -> dict:
+    conn = get_connection(user_id)
     sid = uuid.uuid4().hex[:12]
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -80,8 +93,8 @@ def create_session(title: str = "新对话") -> dict:
     return dict(session)
 
 
-def list_sessions() -> list[dict]:
-    conn = get_connection()
+def list_sessions(user_id: str) -> list[dict]:
+    conn = get_connection(user_id)
     rows = conn.execute("""
         SELECT s.*, IFNULL(m.cnt, 0) as msg_count
         FROM sessions s
@@ -93,15 +106,15 @@ def list_sessions() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def get_session(session_id: str) -> dict | None:
-    conn = get_connection()
+def get_session(user_id: str, session_id: str) -> dict | None:
+    conn = get_connection(user_id)
     row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
     conn.close()
     return dict(row) if row else None
 
 
-def update_session_title(session_id: str, title: str):
-    conn = get_connection()
+def update_session_title(user_id: str, session_id: str, title: str):
+    conn = get_connection(user_id)
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
@@ -111,8 +124,8 @@ def update_session_title(session_id: str, title: str):
     conn.close()
 
 
-def touch_session(session_id: str):
-    conn = get_connection()
+def touch_session(user_id: str, session_id: str):
+    conn = get_connection(user_id)
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "UPDATE sessions SET updated_at = ? WHERE id = ?",
@@ -122,16 +135,16 @@ def touch_session(session_id: str):
     conn.close()
 
 
-def delete_session(session_id: str):
-    conn = get_connection()
+def delete_session(user_id: str, session_id: str):
+    conn = get_connection(user_id)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
     conn.commit()
     conn.close()
 
 
-def batch_delete_sessions(ids: list[str]):
-    conn = get_connection()
+def batch_delete_sessions(user_id: str, ids: list[str]):
+    conn = get_connection(user_id)
     conn.execute("PRAGMA foreign_keys = ON")
     placeholders = ",".join("?" for _ in ids)
     conn.execute(f"DELETE FROM sessions WHERE id IN ({placeholders})", ids)
@@ -139,8 +152,10 @@ def batch_delete_sessions(ids: list[str]):
     conn.close()
 
 
-def add_message(session_id: str, role: str, content: str, image_url: str | None = None) -> dict:
-    conn = get_connection()
+# ── Messages ──────────────────────────────────────────────────────────
+
+def add_message(user_id: str, session_id: str, role: str, content: str, image_url: str | None = None) -> dict:
+    conn = get_connection(user_id)
     now = datetime.now(timezone.utc).isoformat()
     cursor = conn.execute(
         "INSERT INTO messages (session_id, role, content, image_url, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -154,8 +169,8 @@ def add_message(session_id: str, role: str, content: str, image_url: str | None 
     return dict(msg)
 
 
-def get_messages(session_id: str) -> list[dict]:
-    conn = get_connection()
+def get_messages(user_id: str, session_id: str) -> list[dict]:
+    conn = get_connection(user_id)
     rows = conn.execute(
         "SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC",
         (session_id,),
@@ -166,8 +181,8 @@ def get_messages(session_id: str) -> list[dict]:
 
 # ── Recipes (library) ────────────────────────────────────────────────
 
-def save_recipe(session_id: str, recipe_data: dict) -> dict:
-    conn = get_connection()
+def save_recipe(user_id: str, session_id: str, recipe_data: dict) -> dict:
+    conn = get_connection(user_id)
     rid = uuid.uuid4().hex[:12]
     now = datetime.now(timezone.utc).isoformat()
     name = recipe_data.get("name", "")
@@ -182,13 +197,14 @@ def save_recipe(session_id: str, recipe_data: dict) -> dict:
 
 
 def list_all_recipes(
+    user_id: str,
     search_text: str | None = None,
     difficulty: str | None = None,
     ingredient: str | None = None,
     cuisine_type: str | None = None,
     taste: str | None = None,
 ) -> list[dict]:
-    conn = get_connection()
+    conn = get_connection(user_id)
     rows = conn.execute(
         "SELECT * FROM recipes ORDER BY created_at DESC"
     ).fetchall()
@@ -199,7 +215,6 @@ def list_all_recipes(
         d["recipe_data"] = json.loads(d["recipe_data"])
         result.append(d)
 
-    # Python-side filtering (dataset is small)
     filtered = []
     for r in result:
         data = r["recipe_data"]
@@ -238,8 +253,8 @@ def list_all_recipes(
     return filtered
 
 
-def delete_recipe(recipe_id: str) -> bool:
-    conn = get_connection()
+def delete_recipe(user_id: str, recipe_id: str) -> bool:
+    conn = get_connection(user_id)
     cursor = conn.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
     affected = cursor.rowcount
     conn.commit()
@@ -247,8 +262,8 @@ def delete_recipe(recipe_id: str) -> bool:
     return affected > 0
 
 
-def batch_delete_recipes(ids: list[str]):
-    conn = get_connection()
+def batch_delete_recipes(user_id: str, ids: list[str]):
+    conn = get_connection(user_id)
     placeholders = ",".join("?" for _ in ids)
     conn.execute(f"DELETE FROM recipes WHERE id IN ({placeholders})", ids)
     conn.commit()
@@ -257,26 +272,26 @@ def batch_delete_recipes(ids: list[str]):
 
 # ── Dietary Profile ──────────────────────────────────────────────────
 
-def get_dietary_profile() -> dict | None:
-    conn = get_connection()
+def get_dietary_profile(user_id: str) -> dict | None:
+    conn = get_connection(user_id)
     row = conn.execute("SELECT * FROM dietary_profile WHERE id = 1").fetchone()
     conn.close()
     return dict(row) if row else None
 
 
-def upsert_dietary_profile(allergies: str, restrictions: str, preferences: str) -> dict:
-    conn = get_connection()
+def upsert_dietary_profile(user_id: str, allergies: str, restrictions: str, preferences: str, difficulty_preference: str = "") -> dict:
+    conn = get_connection(user_id)
     now = datetime.now(timezone.utc).isoformat()
     existing = conn.execute("SELECT * FROM dietary_profile WHERE id = 1").fetchone()
     if existing:
         conn.execute(
-            "UPDATE dietary_profile SET allergies = ?, restrictions = ?, preferences = ?, updated_at = ? WHERE id = 1",
-            (allergies, restrictions, preferences, now),
+            "UPDATE dietary_profile SET allergies = ?, restrictions = ?, preferences = ?, difficulty_preference = ?, updated_at = ? WHERE id = 1",
+            (allergies, restrictions, preferences, difficulty_preference, now),
         )
     else:
         conn.execute(
-            "INSERT INTO dietary_profile (id, allergies, restrictions, preferences, created_at, updated_at) VALUES (1, ?, ?, ?, ?, ?)",
-            (allergies, restrictions, preferences, now, now),
+            "INSERT INTO dietary_profile (id, allergies, restrictions, preferences, difficulty_preference, created_at, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?)",
+            (allergies, restrictions, preferences, difficulty_preference, now, now),
         )
     conn.commit()
     row = conn.execute("SELECT * FROM dietary_profile WHERE id = 1").fetchone()
@@ -284,10 +299,10 @@ def upsert_dietary_profile(allergies: str, restrictions: str, preferences: str) 
     return dict(row)
 
 
-# ── Shopping Lists ──────────────────────────────────────────
+# ── Shopping Lists ───────────────────────────────────────────────────
 
-def save_shopping_list(name: str, session_id: str, items: list[dict]) -> dict:
-    conn = get_connection()
+def save_shopping_list(user_id: str, name: str, session_id: str, items: list[dict]) -> dict:
+    conn = get_connection(user_id)
     sid = uuid.uuid4().hex[:12]
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -300,22 +315,22 @@ def save_shopping_list(name: str, session_id: str, items: list[dict]) -> dict:
     return _parse_shopping_list(row)
 
 
-def list_shopping_lists() -> list[dict]:
-    conn = get_connection()
+def list_shopping_lists(user_id: str) -> list[dict]:
+    conn = get_connection(user_id)
     rows = conn.execute("SELECT * FROM shopping_lists ORDER BY updated_at DESC").fetchall()
     conn.close()
     return [_parse_shopping_list(r) for r in rows]
 
 
-def get_shopping_list(list_id: str) -> dict | None:
-    conn = get_connection()
+def get_shopping_list(user_id: str, list_id: str) -> dict | None:
+    conn = get_connection(user_id)
     row = conn.execute("SELECT * FROM shopping_lists WHERE id = ?", (list_id,)).fetchone()
     conn.close()
     return _parse_shopping_list(row) if row else None
 
 
-def update_shopping_list_items(list_id: str, items: list[dict]) -> dict | None:
-    conn = get_connection()
+def update_shopping_list_items(user_id: str, list_id: str, items: list[dict]) -> dict | None:
+    conn = get_connection(user_id)
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "UPDATE shopping_lists SET items = ?, updated_at = ? WHERE id = ?",
@@ -327,8 +342,8 @@ def update_shopping_list_items(list_id: str, items: list[dict]) -> dict | None:
     return _parse_shopping_list(row) if row else None
 
 
-def delete_shopping_list(list_id: str):
-    conn = get_connection()
+def delete_shopping_list(user_id: str, list_id: str):
+    conn = get_connection(user_id)
     conn.execute("DELETE FROM shopping_lists WHERE id = ?", (list_id,))
     conn.commit()
     conn.close()
@@ -338,6 +353,3 @@ def _parse_shopping_list(row) -> dict:
     d = dict(row)
     d["items"] = json.loads(d["items"])
     return d
-
-
-init_db()

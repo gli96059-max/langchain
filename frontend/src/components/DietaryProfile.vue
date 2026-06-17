@@ -3,11 +3,11 @@ import { ref, watch } from 'vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
-  profile: { type: Object, default: () => ({ allergies: '', restrictions: '', preferences: '' }) },
+  profile: { type: Object, default: () => ({ allergies: '', restrictions: '', preferences: '', difficulty_preference: '' }) },
 })
 const emit = defineEmits(['close', 'save'])
 
-const form = ref({ allergies: '', restrictions: '', preferences: '' })
+const form = ref({ allergies: '', restrictions: '', preferences: '', difficulty_preference: '' })
 
 watch(() => props.visible, (v) => {
   if (v) form.value = { ...props.profile }
@@ -53,6 +53,28 @@ function save() {
               rows="2"
             ></textarea>
             <span class="field-hint">推荐菜谱时优先考虑</span>
+          </div>
+          <div class="field-group">
+            <label>菜品难度</label>
+            <div class="diff-options">
+              <label class="diff-option" :class="{ active: form.difficulty_preference === '' }">
+                <input type="radio" v-model="form.difficulty_preference" value="" />
+                <span>不限</span>
+              </label>
+              <label class="diff-option" :class="{ active: form.difficulty_preference === '简单' }">
+                <input type="radio" v-model="form.difficulty_preference" value="简单" />
+                <span>简单</span>
+              </label>
+              <label class="diff-option" :class="{ active: form.difficulty_preference === '中等' }">
+                <input type="radio" v-model="form.difficulty_preference" value="中等" />
+                <span>中等</span>
+              </label>
+              <label class="diff-option" :class="{ active: form.difficulty_preference === '困难' }">
+                <input type="radio" v-model="form.difficulty_preference" value="困难" />
+                <span>困难</span>
+              </label>
+            </div>
+            <span class="field-hint">推荐菜谱时按此难度筛选</span>
           </div>
         </div>
         <div class="modal-footer">
@@ -155,6 +177,42 @@ function save() {
   color: var(--color-text-muted);
 }
 
+.diff-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diff-option {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-text);
+  transition: all 0.15s;
+  font-family: var(--font-sans);
+}
+
+.diff-option:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.diff-option.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.diff-option input {
+  display: none;
+}
+
 .modal-footer {
   display: flex;
   justify-content: flex-end;
@@ -203,23 +261,33 @@ function save() {
   }
   .modal-header {
     padding: 16px 18px;
+    padding-top: calc(16px + var(--safe-top, 0px));
   }
   .modal-body {
     padding: 16px 18px;
-    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(16px + var(--safe-bottom, 0px));
   }
   .modal-footer {
     padding: 12px 18px;
-    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(12px + var(--safe-bottom, 0px));
   }
   .field-group textarea {
     font-size: 16px;
     padding: 12px;
   }
+  .diff-option {
+    flex: 1;
+    justify-content: center;
+    padding: 12px 16px;
+    min-height: 44px;
+    font-size: 15px;
+  }
   .btn-cancel, .btn-save {
     flex: 1;
     text-align: center;
     padding: 12px 16px;
+    min-height: 44px;
+    font-size: 15px;
   }
 }
 </style>

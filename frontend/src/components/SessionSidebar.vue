@@ -161,7 +161,7 @@ function formatTime(iso) {
     <div class="sidebar-header">
       <div class="sidebar-brand">
         <span>🍳</span>
-        <span>私厨助手</span>
+        <span>小斐的专属私厨助手</span>
       </div>
       <button class="new-chat-btn" @click="emit('new-session')">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -288,7 +288,7 @@ function formatTime(iso) {
     bottom: 0;
     z-index: 100;
     transform: translateX(-100%);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: var(--safe-bottom, 0px);
   }
   .sidebar.open { transform: translateX(0); }
 }
@@ -315,7 +315,7 @@ function formatTime(iso) {
 @media (max-width: 768px) {
   .sidebar-header {
     padding: 16px;
-    padding-top: calc(16px + env(safe-area-inset-top, 0px));
+    padding-top: calc(16px + var(--safe-top, 0px));
   }
 }
 

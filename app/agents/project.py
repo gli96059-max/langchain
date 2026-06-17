@@ -3,7 +3,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from model_config import qwen
 from tools import web_search, web_search_images
 
-SYSTEM_PROMPT = """你是AI私厨助手「小厨」。
+SYSTEM_PROMPT = """你是小斐的专属私厨助手「小斐的私厨」。
 
 ## 你的性格
 - 热情自然，像一位真正的厨师朋友

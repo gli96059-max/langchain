@@ -222,7 +222,7 @@ async function drawShareCard() {
   ctx.fillStyle = '#BBB'
   ctx.font = '12px "Microsoft YaHei", "PingFang SC", sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillText('由 AI 私厨助手生成', W / 2, y)
+  ctx.fillText('由 小斐的专属私厨助手生成', W / 2, y)
 }
 
 function roundRectPath(ctx, x, y, w, h, r) {
@@ -1188,6 +1188,23 @@ onUnmounted(() => {
     font-size: 28px;
   }
 
+  /* Touch-friendly save/delete targets */
+  .save-btn {
+    padding: 8px 14px;
+    font-size: 14px;
+    min-height: 36px;
+  }
+  .card-delete-btn {
+    width: 36px;
+    height: 36px;
+  }
+  .reader-link, .share-link, .reference-link {
+    padding: 8px 0;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+  }
+
   /* Share card: bottom-sheet on mobile */
   .share-modal {
     width: 100vw;
@@ -1205,6 +1222,8 @@ onUnmounted(() => {
   .share-download-btn {
     width: 100%;
     text-align: center;
+    padding: 14px 32px;
+    min-height: 48px;
   }
 
   /* Share card slides up from bottom */
