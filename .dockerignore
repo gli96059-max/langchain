@@ -11,9 +11,13 @@ venv
 .idea
 node_modules
 frontend/node_modules
-backend.log
+*.log
+resources/*.db
+resources/*.db-shm
+resources/*.db-wal
+resources/test_recipes.json
 uploads/*
 !uploads/.gitkeep
+frontend/dist
 memory.ipynb
 note.ipynb
-*.log

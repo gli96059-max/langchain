@@ -6,18 +6,24 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from app.api.chef import router as chef_router
-from app.master_db import init_master_db
+from app.db import init_pool, init_db, close_pool
 
 app = FastAPI(
     title="小斐的专属私厨助手",
-    description="基于 LangChain + Qwen 的小斐的专属智能私厨助手",
-    version="1.2.0",
+    description="基于 LangChain + Qwen + PostgreSQL 的小斐的专属智能私厨助手",
+    version="2.0.0",
 )
 
 
 @app.on_event("startup")
-def on_startup():
-    init_master_db()
+async def on_startup():
+    await init_pool()
+    await init_db()
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    await close_pool()
 
 # ── CORS (allow Vue dev server + mobile) ────────────────────────────
 app.add_middleware(
